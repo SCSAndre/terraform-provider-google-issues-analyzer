@@ -56,6 +56,19 @@ if [ $? -eq 0 ]; then
        "$REPORT_DIR/terraform_target_services_issues_report_$DATE.md"
     log "Backup saved: terraform_target_services_issues_report_$DATE.md"
 
+    # Send email to team if configured
+    if [ -n "$SMTP_USERNAME" ] && [ -n "$SMTP_PASSWORD" ]; then
+        log "Sending email to team..."
+        python3 "$SCRIPT_DIR/send_team_email.py" >> "$LOG_FILE" 2>&1
+        if [ $? -eq 0 ]; then
+            log "✓ Email sent successfully!"
+        else
+            log "⚠ Email sending failed (check logs)"
+        fi
+    else
+        log "ℹ Email not configured (set SMTP_USERNAME and SMTP_PASSWORD to enable)"
+    fi
+
     # Clean up old logs (keep last 30 days)
     log "Cleaning up old logs..."
     find "$LOG_DIR" -name "report_*.log" -mtime +30 -delete

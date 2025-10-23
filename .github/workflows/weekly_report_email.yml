@@ -34,36 +34,15 @@ jobs:
       id: date
       run: echo "date=$(date +'%Y-%m-%d')" >> $GITHUB_OUTPUT
 
-    - name: Send email with report
-      uses: dawidd6/action-send-mail@v3
-      with:
-        server_address: smtp.gmail.com
-        server_port: 465
-        secure: true
-        username: ${{ secrets.EMAIL_USERNAME }}
-        password: ${{ secrets.EMAIL_PASSWORD }}
-        subject: 'Terraform Issues Weekly Report - ${{ steps.date.outputs.date }}'
-        to: ${{ secrets.EMAIL_RECIPIENTS }}  # Comma-separated list
-        from: Terraform Issues Analyzer
-        body: |
-          Hello team,
-          
-          The weekly Terraform Provider Google issues report is ready!
-          
-          Please find the report attached. This report includes:
-          - Available issues related to Load Balancers
-          - Available issues related to Cloud Armor
-          - Available issues related to Private Service Connect (PSC)
-          
-          All issues have been filtered to show only those that are:
-          ✓ Currently open
-          ✓ Not assigned
-          ✓ Not marked as work-in-progress
-          ✓ Not claimed in comments
-          
-          Best regards,
-          Terraform Issues Analyzer Bot
-        attachments: analysis_results/terraform_target_services_issues_report_en.md
+    - name: Send email to team using Python script
+      env:
+        SMTP_SERVER: ${{ secrets.SMTP_SERVER || 'smtp.gmail.com' }}
+        SMTP_PORT: ${{ secrets.SMTP_PORT || '587' }}
+        SMTP_USERNAME: ${{ secrets.SMTP_USERNAME }}
+        SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+        EMAIL_FROM: ${{ secrets.EMAIL_FROM || secrets.SMTP_USERNAME }}
+      run: |
+        python3 send_team_email.py
 
     - name: Upload report as artifact
       uses: actions/upload-artifact@v3
