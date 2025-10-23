@@ -1,0 +1,74 @@
+name: Weekly Terraform Issues Report with Email
+
+on:
+  schedule:
+    # Run every Friday at 12:00 PM UTC
+    - cron: '0 12 * * 5'
+  workflow_dispatch:
+
+jobs:
+  generate-and-email-report:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+
+    - name: Run issue analyzer
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        python script.py
+
+    - name: Get current date
+      id: date
+      run: echo "date=$(date +'%Y-%m-%d')" >> $GITHUB_OUTPUT
+
+    - name: Send email with report
+      uses: dawidd6/action-send-mail@v3
+      with:
+        server_address: smtp.gmail.com
+        server_port: 465
+        secure: true
+        username: ${{ secrets.EMAIL_USERNAME }}
+        password: ${{ secrets.EMAIL_PASSWORD }}
+        subject: 'Terraform Issues Weekly Report - ${{ steps.date.outputs.date }}'
+        to: ${{ secrets.EMAIL_RECIPIENTS }}  # Comma-separated list
+        from: Terraform Issues Analyzer
+        body: |
+          Hello team,
+          
+          The weekly Terraform Provider Google issues report is ready!
+          
+          Please find the report attached. This report includes:
+          - Available issues related to Load Balancers
+          - Available issues related to Cloud Armor
+          - Available issues related to Private Service Connect (PSC)
+          
+          All issues have been filtered to show only those that are:
+          ✓ Currently open
+          ✓ Not assigned
+          ✓ Not marked as work-in-progress
+          ✓ Not claimed in comments
+          
+          Best regards,
+          Terraform Issues Analyzer Bot
+        attachments: analysis_results/terraform_target_services_issues_report_en.md
+
+    - name: Upload report as artifact
+      uses: actions/upload-artifact@v3
+      with:
+        name: terraform-issues-report-${{ steps.date.outputs.date }}
+        path: analysis_results/terraform_target_services_issues_report_en.md
+        retention-days: 90
+
