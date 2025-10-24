@@ -20,6 +20,7 @@ from pathlib import Path
 
 # Team email addresses - Your team members
 TEAM_EMAILS = [
+    "acardinalli@ciandt.com",
     "paul@ciandt.com",
     "lisandros@ciandt.com",
     "matheusaleixo@ciandt.com",

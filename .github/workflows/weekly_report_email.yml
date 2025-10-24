@@ -45,7 +45,7 @@ jobs:
         python3 send_team_email.py
 
     - name: Upload report as artifact
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: terraform-issues-report-${{ steps.date.outputs.date }}
         path: analysis_results/terraform_target_services_issues_report_en.md
