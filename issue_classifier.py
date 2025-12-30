@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 
 class IssueClassifier:
     """Classifies issues based on service relevance."""
-
+                                              
     def __init__(self):
         self.service_terms = get_service_terms()
         self.critical_keywords = get_critical_keywords()
