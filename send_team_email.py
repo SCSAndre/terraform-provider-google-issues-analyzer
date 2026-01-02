@@ -13,27 +13,16 @@ from email.mime.base import MIMEBase
 from email import encoders
 from datetime import datetime
 from pathlib import Path
+from typing import List, Dict, Any
 
-# ============================================================================
-# CONFIGURATION - EDIT YOUR TEAM EMAIL ADDRESSES HERE
-# ============================================================================
-
-# Team email addresses - Your team members
-TEAM_EMAILS = [
-    "acardinalli@ciandt.com",
-    "paul@ciandt.com",
-    "lisandros@ciandt.com",
-    "matheusaleixo@ciandt.com",
-    "mportocarrero@ciandt.com",
-    "victorsantos@ciandt.com",
-]
-
-# Email configuration (loaded from environment variables)
-SMTP_SERVER = os.getenv('SMTP_SERVER', 'smtp.gmail.com')
-SMTP_PORT = int(os.getenv('SMTP_PORT', '587'))
-SMTP_USERNAME = os.getenv('SMTP_USERNAME', '')  # Your email address
-SMTP_PASSWORD = os.getenv('SMTP_PASSWORD', '')  # Your email password or app password
-EMAIL_FROM = os.getenv('EMAIL_FROM', SMTP_USERNAME)
+from config import (
+    get_team_emails,
+    SMTP_SERVER,
+    SMTP_PORT,
+    SMTP_USERNAME,
+    SMTP_PASSWORD,
+    EMAIL_FROM,
+)
 
 # Report configuration
 REPORT_DIR = Path(__file__).parent / "analysis_results"
@@ -226,19 +215,23 @@ def main():
     print(f"✓ Report found: {REPORT_FILE}")
     print()
     
+    # Get team emails from config (environment variable)
+    team_emails = get_team_emails()
+    
     # Check team emails configuration
-    if not TEAM_EMAILS or TEAM_EMAILS == ["team-member1@company.com", "team-member2@company.com", "team-member3@company.com"]:
+    if not team_emails:
         print("⚠️  WARNING: Team emails not configured!")
         print()
-        print("Please edit this file and add your team's email addresses:")
-        print(f"   {__file__}")
+        print("Please set the TEAM_EMAILS environment variable:")
+        print("   export TEAM_EMAILS='user1@example.com,user2@example.com'")
         print()
-        print("Look for the TEAM_EMAILS list at the top of the file.")
+        print("Or create a .env file with:")
+        print("   TEAM_EMAILS=user1@example.com,user2@example.com")
         print()
         sys.exit(1)
     
-    print(f"✓ Team emails configured: {len(TEAM_EMAILS)} recipient(s)")
-    for email in TEAM_EMAILS:
+    print(f"✓ Team emails configured: {len(team_emails)} recipient(s)")
+    for email in team_emails:
         print(f"   • {email}")
     print()
     
@@ -259,7 +252,7 @@ def main():
     print("=" * 70)
     print()
     
-    success = send_email(TEAM_EMAILS, subject, body, REPORT_FILE)
+    success = send_email(team_emails, subject, body, REPORT_FILE)
     
     print()
     print("=" * 70)
@@ -276,4 +269,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
