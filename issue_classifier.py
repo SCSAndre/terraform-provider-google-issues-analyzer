@@ -1,31 +1,67 @@
 """Issue classification using TF-IDF and regex matching."""
 import re
 import logging
-from typing import Dict, Tuple, Optional
+from typing import Dict, Tuple, Optional, List
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
+import numpy as np
 
-from config import TFIDF_WEIGHT, REGEX_WEIGHT, MIN_CONFIDENCE_THRESHOLD
+from config import TFIDF_WEIGHT, REGEX_WEIGHT, MIN_CONFIDENCE_THRESHOLD, ConfidenceLevel
 from service_definitions import get_service_terms, get_critical_keywords
 
 logger = logging.getLogger(__name__)
 
 
 class IssueClassifier:
-    """Classifies issues based on service relevance."""
-                                              
+    """Classifies issues based on service relevance using pre-fitted TF-IDF."""
+    
     def __init__(self):
         self.service_terms = get_service_terms()
         self.critical_keywords = get_critical_keywords()
+        self._categories = list(self.service_terms.keys())
+        
+        # Pre-fit TF-IDF vectorizer with service terms for better performance
+        self._vectorizer: Optional[TfidfVectorizer] = None
+        self._category_vectors = None
+        self._initialize_tfidf()
+
+    def _initialize_tfidf(self) -> None:
+        """Pre-fits TF-IDF vectorizer with service category documents."""
+        try:
+            # Build category documents
+            category_docs = []
+            for category in self._categories:
+                cat_text = " ".join(self.service_terms[category])
+                category_docs.append(cat_text)
+            
+            # Initialize and fit vectorizer
+            self._vectorizer = TfidfVectorizer(
+                stop_words='english',
+                ngram_range=(1, 2),
+                max_features=5000,  # Limit features for performance
+                min_df=1
+            )
+            
+            # Fit on category documents and transform
+            self._category_vectors = self._vectorizer.fit_transform(category_docs)
+            logger.debug("TF-IDF vectorizer initialized with %d features", 
+                        len(self._vectorizer.get_feature_names_out()))
+        except Exception as e:
+            logger.error(f"Error initializing TF-IDF vectorizer: {e}")
+            self._vectorizer = None
+            self._category_vectors = None
 
     def classify_issue(self, issue: Dict) -> Tuple[bool, Optional[str], float]:
         """
         Determines if issue is relevant to target services.
 
+        Args:
+            issue: Dictionary containing issue data with 'title', 'body', 'labels'
+
         Returns:
             Tuple of (is_relevant, service_category, confidence)
         """
-        # Quick keyword check first
+        # Quick keyword check first (most efficient)
         is_match, category, confidence = self._quick_keyword_check(issue)
         if is_match:
             return True, category, confidence
@@ -44,17 +80,17 @@ class IssueClassifier:
             # Check labels (highest confidence)
             for keyword in keywords:
                 if keyword in label_text:
-                    return True, category, 90.0
+                    return True, category, ConfidenceLevel.LABEL_MATCH
 
             # Check title (high confidence)
             for keyword in keywords:
                 if keyword in title:
-                    return True, category, 85.0
+                    return True, category, ConfidenceLevel.TITLE_MATCH
 
             # Check body (medium-high confidence)
             for keyword in keywords:
                 if keyword in body:
-                    return True, category, 75.0
+                    return True, category, ConfidenceLevel.BODY_MATCH
 
         return False, None, 0
 
@@ -85,7 +121,35 @@ class IssueClassifier:
         return f"{title}\n{' '.join(labels)}\n{body}"
 
     def _classify_with_tfidf(self, issue_text: str) -> Dict[str, float]:
-        """Uses TF-IDF and cosine similarity for classification."""
+        """
+        Uses pre-fitted TF-IDF vectorizer and cosine similarity for classification.
+        
+        This optimized version uses a pre-fitted vectorizer instead of fitting
+        a new one for each issue, significantly improving performance.
+        """
+        # Check if vectorizer is initialized
+        if self._vectorizer is None or self._category_vectors is None:
+            logger.warning("TF-IDF vectorizer not initialized, falling back to per-issue fitting")
+            return self._classify_with_tfidf_fallback(issue_text)
+        
+        try:
+            # Transform issue text using pre-fitted vectorizer
+            issue_vector = self._vectorizer.transform([issue_text])
+            
+            # Calculate similarities with pre-computed category vectors
+            similarities = {}
+            for i, category in enumerate(self._categories):
+                cat_vector = self._category_vectors[i]
+                sim = cosine_similarity(issue_vector, cat_vector)
+                similarities[category] = float(sim[0][0]) * 100
+            
+            return similarities
+        except Exception as e:
+            logger.error(f"Error in optimized TF-IDF classification: {e}")
+            return self._classify_with_tfidf_fallback(issue_text)
+
+    def _classify_with_tfidf_fallback(self, issue_text: str) -> Dict[str, float]:
+        """Fallback TF-IDF classification when pre-fitted vectorizer is unavailable."""
         documents = [issue_text]
         categories = list(self.service_terms.keys())
 
@@ -107,7 +171,7 @@ class IssueClassifier:
 
             return similarities
         except Exception as e:
-            logger.error(f"Error in TF-IDF classification: {e}")
+            logger.error(f"Error in TF-IDF fallback classification: {e}")
             return {}
 
     def _calculate_regex_scores(self, issue: Dict) -> Dict[str, float]:
