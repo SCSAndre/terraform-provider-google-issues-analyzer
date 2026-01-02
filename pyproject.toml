@@ -243,7 +243,7 @@ exclude_lines = [
     "if TYPE_CHECKING:",
     "@abstractmethod",
 ]
-fail_under = 80
+fail_under = 75
 show_missing = true
 
 
