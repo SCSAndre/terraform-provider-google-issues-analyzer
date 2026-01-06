@@ -44,13 +44,13 @@ TARGET_REPO: str = os.getenv("TARGET_REPO", "hashicorp/terraform-provider-google
 # =============================================================================
 
 #: Minimum confidence score (0-100) for an issue to be considered relevant.
-MIN_CONFIDENCE_THRESHOLD: int = int(os.getenv("MIN_CONFIDENCE_THRESHOLD", "30"))
+MIN_CONFIDENCE_THRESHOLD: int = int(os.getenv("MIN_CONFIDENCE_THRESHOLD", "75"))
 
 #: High confidence threshold for priority sorting
-HIGH_CONFIDENCE_THRESHOLD: int = 70
+HIGH_CONFIDENCE_THRESHOLD: int = 85
 
 #: Medium confidence threshold for categorization
-MEDIUM_CONFIDENCE_THRESHOLD: int = 50
+MEDIUM_CONFIDENCE_THRESHOLD: int = 75
 
 #: Weight factor for TF-IDF similarity scores (0.0-1.0)
 TFIDF_WEIGHT: float = 0.7

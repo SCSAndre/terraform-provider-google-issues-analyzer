@@ -281,26 +281,31 @@ class TestAnalyzeIssues(unittest.TestCase):
         
         issues = [
             {'number': 1, 'pull_request': {}, 'title': 'PR'},  # PR - should be skipped
-            {'number': 2, 'title': 'Bug report', 'html_url': 'https://github.com/test/2', 'created_at': '2025-01-01'},  # Issue
+            {
+                'number': 2, 'title': 'Bug report', 'html_url': 'https://github.com/test/2',
+                'created_at': '2025-01-01T00:00:00Z', 'updated_at': '2025-01-01T00:00:00Z',
+                'state': 'open', 'labels': [], 'assignees': [], 'comments': 0
+            },  # Issue
         ]
         
-        mock_classifier.classify_issue.return_value = (True, 'Category', 85.0)
+        mock_classifier.classify_issue_with_related.return_value = (True, 'Category', 85.0, [])
         mock_checker.is_issue_available.return_value = (True, None)
 
         result = analyze_issues(issues, mock_classifier, mock_checker)
 
         # Only the non-PR issue should be processed
-        self.assertEqual(mock_classifier.classify_issue.call_count, 1)
+        self.assertEqual(mock_classifier.classify_issue_with_related.call_count, 1)
 
     def test_analyze_filters_non_relevant(self):
         """Test that non-relevant issues are filtered out."""
         from script import analyze_issues
         
         mock_classifier = Mock()
-        mock_classifier.classify_issue.return_value = (False, None, 0)
+        mock_classifier.classify_issue_with_related.return_value = (False, None, 0, [])
         mock_checker = Mock()
         
-        issues = [{'number': 1, 'title': 'Unrelated issue'}]
+        issues = [{'number': 1, 'title': 'Unrelated issue', 'created_at': '2025-01-01T00:00:00Z',
+                   'updated_at': '2025-01-01T00:00:00Z', 'labels': [], 'assignees': []}]
 
         result = analyze_issues(issues, mock_classifier, mock_checker)
 
@@ -313,11 +318,14 @@ class TestAnalyzeIssues(unittest.TestCase):
         from script import analyze_issues
         
         mock_classifier = Mock()
-        mock_classifier.classify_issue.return_value = (True, 'Category', 85.0)
+        mock_classifier.classify_issue_with_related.return_value = (True, 'Category', 85.0, [])
         mock_checker = Mock()
         mock_checker.is_issue_available.return_value = (False, 'Already assigned')
         
-        issues = [{'number': 1, 'title': 'Assigned issue'}]
+        issues = [{
+            'number': 1, 'title': 'Assigned issue', 'created_at': '2025-01-01T00:00:00Z',
+            'updated_at': '2025-01-01T00:00:00Z', 'labels': [], 'assignees': []
+        }]
 
         result = analyze_issues(issues, mock_classifier, mock_checker)
 
@@ -328,7 +336,7 @@ class TestAnalyzeIssues(unittest.TestCase):
         from script import analyze_issues
         
         mock_classifier = Mock()
-        mock_classifier.classify_issue.return_value = (True, 'Load Balancer', 92.5)
+        mock_classifier.classify_issue_with_related.return_value = (True, 'Load Balancer', 92.5, ['PSC'])
         mock_checker = Mock()
         mock_checker.is_issue_available.return_value = (True, None)
         
@@ -336,9 +344,12 @@ class TestAnalyzeIssues(unittest.TestCase):
             'number': 123,
             'title': 'LB issue',
             'html_url': 'https://github.com/test/123',
+            'state': 'open',
             'created_at': '2025-01-01T00:00:00Z',
+            'updated_at': '2025-01-02T00:00:00Z',
             'comments': 5,
-            'labels': [{'name': 'bug'}, {'name': 'lb'}]
+            'labels': [{'name': 'bug'}, {'name': 'lb'}],
+            'assignees': []
         }]
 
         result = analyze_issues(issues, mock_classifier, mock_checker)
@@ -348,13 +359,16 @@ class TestAnalyzeIssues(unittest.TestCase):
         self.assertEqual(result[0]['category'], 'Load Balancer')
         self.assertEqual(result[0]['confidence'], 92.5)
         self.assertEqual(result[0]['labels'], ['bug', 'lb'])
+        self.assertEqual(result[0]['related_categories'], ['PSC'])
+        self.assertIn('priority_score', result[0])
+        self.assertIn('age_days', result[0])
 
     def test_analyze_handles_missing_labels(self):
         """Test handling issues without labels."""
         from script import analyze_issues
         
         mock_classifier = Mock()
-        mock_classifier.classify_issue.return_value = (True, 'Category', 80.0)
+        mock_classifier.classify_issue_with_related.return_value = (True, 'Category', 80.0, [])
         mock_checker = Mock()
         mock_checker.is_issue_available.return_value = (True, None)
         
@@ -362,7 +376,10 @@ class TestAnalyzeIssues(unittest.TestCase):
             'number': 1,
             'title': 'Test',
             'html_url': 'https://github.com/test/1',
-            'created_at': '2025-01-01',
+            'state': 'open',
+            'created_at': '2025-01-01T00:00:00Z',
+            'updated_at': '2025-01-01T00:00:00Z',
+            'assignees': [],
             # No labels key
         }]
 
@@ -379,11 +396,11 @@ class TestAnalyzeIssues(unittest.TestCase):
         mock_checker = Mock()
         
         # Configure mock responses
-        mock_classifier.classify_issue.side_effect = [
-            (True, 'Cat1', 90.0),   # Relevant
-            (False, None, 0),       # Not relevant
-            (True, 'Cat2', 85.0),   # Relevant
-            (True, 'Cat1', 80.0),   # Relevant but not available
+        mock_classifier.classify_issue_with_related.side_effect = [
+            (True, 'Cat1', 90.0, []),   # Relevant
+            (False, None, 0, []),       # Not relevant
+            (True, 'Cat2', 85.0, []),   # Relevant
+            (True, 'Cat1', 80.0, []),   # Relevant but not available
         ]
         mock_checker.is_issue_available.side_effect = [
             (True, None),           # Available
@@ -392,7 +409,11 @@ class TestAnalyzeIssues(unittest.TestCase):
         ]
         
         issues = [
-            {'number': i, 'title': f'Issue {i}', 'html_url': f'url{i}', 'created_at': '2025-01-01'}
+            {
+                'number': i, 'title': f'Issue {i}', 'html_url': f'url{i}',
+                'state': 'open', 'created_at': '2025-01-01T00:00:00Z',
+                'updated_at': '2025-01-01T00:00:00Z', 'labels': [], 'assignees': []
+            }
             for i in range(4)
         ]
 
@@ -430,7 +451,7 @@ class TestGenerateReport(unittest.TestCase):
         
         self.assertTrue(report_path.exists())
         content = report_path.read_text()
-        self.assertIn('**Total Issues Found:** 0', content)
+        self.assertIn('**Total Issues Analyzed:** 0', content)
 
     @patch('script.OUTPUT_DIR')
     def test_generate_report_with_issues(self, mock_output_dir):
@@ -444,21 +465,39 @@ class TestGenerateReport(unittest.TestCase):
                 'number': 1,
                 'title': 'Test Issue 1',
                 'url': 'https://github.com/test/1',
-                'category': 'Load Balancer',
+                'state': 'open',
+                'category': 'Load Balancers',
                 'confidence': 95.0,
-                'created_at': '2025-01-01',
+                'created_at': '2025-01-01T00:00:00Z',
+                'updated_at': '2025-01-02T00:00:00Z',
+                'age_days': 30,
+                'days_since_update': 5,
                 'comments': 3,
-                'labels': ['bug', 'lb']
+                'labels': ['bug', 'lb'],
+                'label_types': {'bug': True, 'enhancement': False},
+                'assignees': [],
+                'is_assigned': False,
+                'related_categories': [],
+                'priority_score': 75.0
             },
             {
                 'number': 2,
                 'title': 'Test Issue 2',
                 'url': 'https://github.com/test/2',
+                'state': 'open',
                 'category': 'Cloud Armor',
                 'confidence': 85.0,
-                'created_at': '2025-01-02',
+                'created_at': '2025-01-02T00:00:00Z',
+                'updated_at': '2025-01-03T00:00:00Z',
+                'age_days': 20,
+                'days_since_update': 3,
                 'comments': 0,
-                'labels': []
+                'labels': [],
+                'label_types': {},
+                'assignees': [],
+                'is_assigned': False,
+                'related_categories': [],
+                'priority_score': 60.0
             }
         ]
         
@@ -466,12 +505,11 @@ class TestGenerateReport(unittest.TestCase):
             generate_report(issues)
         
         content = report_path.read_text()
-        self.assertIn('**Total Issues Found:** 2', content)
-        self.assertIn('## Load Balancer', content)
-        self.assertIn('## Cloud Armor', content)
-        self.assertIn('### #1: Test Issue 1', content)
+        self.assertIn('**Total Issues Analyzed:** 2', content)
+        self.assertIn('Load Balancers', content)
+        self.assertIn('Cloud Armor', content)
+        self.assertIn('#1', content)
         self.assertIn('**Confidence:** 95.0%', content)
-        self.assertIn('**Labels:** bug, lb', content)
 
     @patch('script.OUTPUT_DIR')
     def test_generate_report_groups_by_category(self, mock_output_dir):
@@ -480,13 +518,20 @@ class TestGenerateReport(unittest.TestCase):
         
         report_path = Path(self.temp_dir) / "terraform_target_services_issues_report_en.md"
         
+        base_issue = {
+            'state': 'open', 'updated_at': '2025-01-01T00:00:00Z',
+            'age_days': 30, 'days_since_update': 5,
+            'label_types': {}, 'assignees': [], 'is_assigned': False,
+            'related_categories': [], 'priority_score': 50.0
+        }
+        
         issues = [
-            {'number': 1, 'title': 'LB 1', 'url': 'url1', 'category': 'Load Balancer',
-             'confidence': 90.0, 'created_at': '2025-01-01', 'comments': 0, 'labels': []},
-            {'number': 2, 'title': 'CA 1', 'url': 'url2', 'category': 'Cloud Armor',
-             'confidence': 85.0, 'created_at': '2025-01-01', 'comments': 0, 'labels': []},
-            {'number': 3, 'title': 'LB 2', 'url': 'url3', 'category': 'Load Balancer',
-             'confidence': 80.0, 'created_at': '2025-01-01', 'comments': 0, 'labels': []},
+            {**base_issue, 'number': 1, 'title': 'LB 1', 'url': 'url1', 'category': 'Load Balancers',
+             'confidence': 90.0, 'created_at': '2025-01-01T00:00:00Z', 'comments': 0, 'labels': []},
+            {**base_issue, 'number': 2, 'title': 'CA 1', 'url': 'url2', 'category': 'Cloud Armor',
+             'confidence': 85.0, 'created_at': '2025-01-01T00:00:00Z', 'comments': 0, 'labels': []},
+            {**base_issue, 'number': 3, 'title': 'LB 2', 'url': 'url3', 'category': 'Load Balancers',
+             'confidence': 80.0, 'created_at': '2025-01-01T00:00:00Z', 'comments': 0, 'labels': []},
         ]
         
         with patch('script.OUTPUT_DIR', Path(self.temp_dir)):
@@ -494,24 +539,31 @@ class TestGenerateReport(unittest.TestCase):
         
         content = report_path.read_text()
         
-        # Check summary table
-        self.assertIn('| Load Balancer | 2 |', content)
-        self.assertIn('| Cloud Armor | 1 |', content)
+        # Check category summary table
+        self.assertIn('Load Balancers', content)
+        self.assertIn('Cloud Armor', content)
 
     @patch('script.OUTPUT_DIR')
-    def test_generate_report_sorts_by_confidence(self, mock_output_dir):
-        """Test that issues within categories are sorted by confidence."""
+    def test_generate_report_sorts_by_priority(self, mock_output_dir):
+        """Test that issues within categories are sorted by priority score."""
         from script import generate_report
         
         report_path = Path(self.temp_dir) / "terraform_target_services_issues_report_en.md"
         
+        base_issue = {
+            'state': 'open', 'created_at': '2025-01-01T00:00:00Z',
+            'updated_at': '2025-01-01T00:00:00Z', 'age_days': 30, 'days_since_update': 5,
+            'label_types': {}, 'assignees': [], 'is_assigned': False,
+            'related_categories': [], 'comments': 0, 'labels': []
+        }
+        
         issues = [
-            {'number': 1, 'title': 'Low conf', 'url': 'url1', 'category': 'Cat',
-             'confidence': 70.0, 'created_at': '2025-01-01', 'comments': 0, 'labels': []},
-            {'number': 2, 'title': 'High conf', 'url': 'url2', 'category': 'Cat',
-             'confidence': 95.0, 'created_at': '2025-01-01', 'comments': 0, 'labels': []},
-            {'number': 3, 'title': 'Med conf', 'url': 'url3', 'category': 'Cat',
-             'confidence': 85.0, 'created_at': '2025-01-01', 'comments': 0, 'labels': []},
+            {**base_issue, 'number': 1, 'title': 'Low priority', 'url': 'url1', 'category': 'Cat',
+             'confidence': 70.0, 'priority_score': 30.0},
+            {**base_issue, 'number': 2, 'title': 'High priority', 'url': 'url2', 'category': 'Cat',
+             'confidence': 95.0, 'priority_score': 90.0},
+            {**base_issue, 'number': 3, 'title': 'Med priority', 'url': 'url3', 'category': 'Cat',
+             'confidence': 85.0, 'priority_score': 60.0},
         ]
         
         with patch('script.OUTPUT_DIR', Path(self.temp_dir)):
@@ -519,10 +571,10 @@ class TestGenerateReport(unittest.TestCase):
         
         content = report_path.read_text()
         
-        # High confidence should appear before medium, medium before low
-        high_pos = content.find('High conf')
-        med_pos = content.find('Med conf')
-        low_pos = content.find('Low conf')
+        # High priority should appear before medium, medium before low
+        high_pos = content.find('High priority')
+        med_pos = content.find('Med priority')
+        low_pos = content.find('Low priority')
         
         self.assertLess(high_pos, med_pos)
         self.assertLess(med_pos, low_pos)

@@ -234,6 +234,77 @@ class IssueClassifier:
 
         return False, None, 0
 
+    def _evaluate_scores_with_related(
+        self, final_scores: Dict[str, float]
+    ) -> Tuple[bool, Optional[str], float, List[str]]:
+        """Evaluates final scores and returns classification with related categories.
+        
+        Returns:
+            Tuple of (is_relevant, primary_category, confidence, related_categories)
+        """
+        if not final_scores:
+            return False, None, 0, []
+
+        # Sort categories by score
+        sorted_categories = sorted(final_scores.items(), key=lambda x: x[1], reverse=True)
+        
+        if not sorted_categories:
+            return False, None, 0, []
+        
+        best_category, score = sorted_categories[0]
+        
+        if score < MIN_CONFIDENCE_THRESHOLD:
+            return False, None, 0, []
+        
+        # Find related categories (score >= 50% of best score and >= 50 absolute)
+        related_threshold = max(score * 0.5, 50)
+        related_categories = [
+            cat for cat, cat_score in sorted_categories[1:]
+            if cat_score >= related_threshold
+        ]
+        
+        return True, best_category, score, related_categories
+
+    def classify_issue_with_related(
+        self, issue: Dict
+    ) -> Tuple[bool, Optional[str], float, List[str]]:
+        """
+        Determines if issue is relevant and identifies related categories.
+        
+        This is an enhanced version of classify_issue that also returns
+        categories that the issue might be related to (for cross-referencing).
+
+        Args:
+            issue: Dictionary containing issue data with 'title', 'body', 'labels'
+
+        Returns:
+            Tuple of (is_relevant, primary_category, confidence, related_categories)
+        """
+        # Quick keyword check first (most efficient)
+        is_match, category, confidence = self._quick_keyword_check(issue)
+        if is_match:
+            # For quick matches, still check for related categories
+            issue_text = self._build_issue_text(issue)
+            tfidf_scores = self._classify_with_tfidf(issue_text)
+            regex_scores = self._calculate_regex_scores(issue)
+            final_scores = self._combine_scores(tfidf_scores, regex_scores)
+            
+            # Remove the matched category and find related ones
+            related_threshold = max(confidence * 0.5, 50)
+            related_categories = [
+                cat for cat, cat_score in final_scores.items()
+                if cat != category and cat_score >= related_threshold
+            ]
+            return True, category, confidence, related_categories
+
+        # Full analysis if quick check fails
+        issue_text = self._build_issue_text(issue)
+        tfidf_scores = self._classify_with_tfidf(issue_text)
+        regex_scores = self._calculate_regex_scores(issue)
+        final_scores = self._combine_scores(tfidf_scores, regex_scores)
+        
+        return self._evaluate_scores_with_related(final_scores)
+
     def _log_scores(self, issue: Dict, scores: Dict[str, float]) -> None:
         """Logs classification scores for debugging."""
         logger.debug(f"Issue #{issue.get('number')}: {issue.get('title')}")
