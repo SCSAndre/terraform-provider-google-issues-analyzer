@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Terraform Issues Analyzer - Reports</title>
+    <style>
+        :root {
+            --primary-color: #7c3aed;
+            --primary-light: #a78bfa;
+            --bg-color: #f8fafc;
+            --card-bg: #ffffff;
+            --text-color: #1e293b;
+            --text-muted: #64748b;
+        }
+        
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: var(--bg-color);
+            color: var(--text-color);
+            line-height: 1.6;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 2rem;
+        }
+        
+        .container {
+            max-width: 600px;
+            width: 100%;
+        }
+        
+        header {
+            text-align: center;
+            margin-bottom: 2rem;
+            padding: 2rem;
+            background: linear-gradient(135deg, var(--primary-color), var(--primary-light));
+            color: white;
+            border-radius: 16px;
+        }
+        
+        header h1 {
+            font-size: 1.8rem;
+            margin-bottom: 0.5rem;
+        }
+        
+        header p {
+            opacity: 0.9;
+        }
+        
+        .card {
+            background: var(--card-bg);
+            border-radius: 12px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            padding: 1.5rem;
+            margin-bottom: 1rem;
+        }
+        
+        .card h2 {
+            color: var(--primary-color);
+            margin-bottom: 1rem;
+            font-size: 1.2rem;
+        }
+        
+        .report-links {
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+        }
+        
+        .report-link {
+            display: flex;
+            align-items: center;
+            padding: 1rem 1.5rem;
+            background: var(--bg-color);
+            border-radius: 8px;
+            text-decoration: none;
+            color: var(--text-color);
+            transition: all 0.2s;
+        }
+        
+        .report-link:hover {
+            background: var(--primary-light);
+            color: white;
+            transform: translateX(5px);
+        }
+        
+        .report-link .icon {
+            font-size: 2rem;
+            margin-right: 1rem;
+        }
+        
+        .report-link .info h3 {
+            font-size: 1rem;
+            margin-bottom: 0.25rem;
+        }
+        
+        .report-link .info p {
+            font-size: 0.875rem;
+            color: var(--text-muted);
+        }
+        
+        .report-link:hover .info p {
+            color: rgba(255,255,255,0.8);
+        }
+        
+        footer {
+            text-align: center;
+            margin-top: 2rem;
+            color: var(--text-muted);
+            font-size: 0.875rem;
+        }
+        
+        footer a {
+            color: var(--primary-color);
+            text-decoration: none;
+        }
+        
+        footer a:hover {
+            text-decoration: underline;
+        }
+        
+        .last-updated {
+            text-align: center;
+            color: var(--text-muted);
+            font-size: 0.875rem;
+            margin-top: 1rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🔍 Terraform Issues Analyzer</h1>
+            <p>Analysis reports for Terraform Provider Google</p>
+        </header>
+        
+        <div class="card">
+            <h2>📊 Latest Reports</h2>
+            <div class="report-links">
+                <a href="terraform_issues_report.html" class="report-link">
+                    <span class="icon">📈</span>
+                    <div class="info">
+                        <h3>Interactive HTML Report</h3>
+                        <p>Charts, filters, and detailed analysis</p>
+                    </div>
+                </a>
+                <a href="terraform_target_services_issues_report_en.md" class="report-link">
+                    <span class="icon">📝</span>
+                    <div class="info">
+                        <h3>Markdown Report</h3>
+                        <p>Plain text format for IDEs and documentation</p>
+                    </div>
+                </a>
+            </div>
+        </div>
+        
+        <p class="last-updated">Reports are updated weekly on Fridays</p>
+        
+        <footer>
+            <p>Powered by <a href="https://github.com/SCSAndre/terraform-provider-google-issues-analyzer" target="_blank">Terraform Issues Analyzer</a></p>
+        </footer>
+    </div>
+</body>
+</html>

@@ -22,6 +22,17 @@ on:
         required: false
         default: false
 
+# Sets permissions of the GITHUB_TOKEN to allow deployment to GitHub Pages
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Allow only one concurrent deployment
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
 jobs:
   generate-report:
     runs-on: ubuntu-latest
@@ -100,6 +111,23 @@ jobs:
           analysis_results/terraform_target_services_issues_report_en.md
           analysis_results/terraform_issues_report.html
         retention-days: 90
+
+    - name: Copy reports to docs folder for GitHub Pages
+      run: |
+        cp analysis_results/terraform_issues_report.html docs/
+        cp analysis_results/terraform_target_services_issues_report_en.md docs/
+
+    - name: Setup Pages
+      uses: actions/configure-pages@v4
+
+    - name: Upload Pages artifact
+      uses: actions/upload-pages-artifact@v3
+      with:
+        path: docs/
+
+    - name: Deploy to GitHub Pages
+      id: deployment
+      uses: actions/deploy-pages@v4
 
     - name: Create workflow summary
       if: always()
