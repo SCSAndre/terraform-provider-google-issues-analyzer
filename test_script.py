@@ -509,7 +509,8 @@ class TestGenerateReport(unittest.TestCase):
         self.assertIn('Load Balancers', content)
         self.assertIn('Cloud Armor', content)
         self.assertIn('#1', content)
-        self.assertIn('**Confidence:** 95.0%', content)
+        # Now using compact table format instead of detailed entries
+        self.assertIn('| Issue | Priority | Age | Updated | Type | Labels |', content)
 
     @patch('script.OUTPUT_DIR')
     def test_generate_report_groups_by_category(self, mock_output_dir):
