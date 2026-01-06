@@ -96,7 +96,9 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: terraform-issues-report-${{ steps.date.outputs.date }}
-        path: analysis_results/terraform_target_services_issues_report_en.md
+        path: |
+          analysis_results/terraform_target_services_issues_report_en.md
+          analysis_results/terraform_issues_report.html
         retention-days: 90
 
     - name: Create workflow summary
