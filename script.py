@@ -541,8 +541,6 @@ def write_attention_needed(f, issues: List[Dict[str, Any]]) -> None:
         f.write(f"| [#{issue['number']}]({issue['url']}) {title} | {issue['category']} | {issue.get('comments', 0)} | {last_update} ago | {issue_type} |\n")
     
     f.write("\n")
-    f.write(f"| 💤 Stale (>180 days) | {stale_count} |\n")
-    f.write("\n")
 
 
 def write_priority_recommendations(f, issues: List[Dict[str, Any]]) -> None:
