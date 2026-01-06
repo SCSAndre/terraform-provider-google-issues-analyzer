@@ -423,8 +423,16 @@ def generate_report(issues: List[Dict[str, Any]]) -> None:
         write_issues_by_category(f, issues)
 
     logger.info(
-        "Report generated",
+        "Markdown report generated",
         extra={"path": str(report_path), "issue_count": len(issues)}
+    )
+    
+    # Generate HTML report
+    from html_report_generator import generate_html_report
+    html_path = generate_html_report(issues, OUTPUT_DIR)
+    logger.info(
+        "HTML report generated",
+        extra={"path": str(html_path), "issue_count": len(issues)}
     )
 
 
