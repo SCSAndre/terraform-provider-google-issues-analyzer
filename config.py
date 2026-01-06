@@ -93,10 +93,10 @@ OUTPUT_DIR.mkdir(exist_ok=True)
 # =============================================================================
 
 #: SMTP server hostname
-SMTP_SERVER: str = os.getenv('SMTP_SERVER', 'smtp.gmail.com')
+SMTP_SERVER: str = os.getenv('SMTP_SERVER') or 'smtp.gmail.com'
 
 #: SMTP server port (587 for TLS, 465 for SSL)
-SMTP_PORT: int = int(os.getenv('SMTP_PORT', '587'))
+SMTP_PORT: int = int(os.getenv('SMTP_PORT') or '587')
 
 #: SMTP authentication username
 SMTP_USERNAME: str = os.getenv('SMTP_USERNAME', '')
