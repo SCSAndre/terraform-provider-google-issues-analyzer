@@ -1,0 +1,117 @@
+name: Terraform Issues Report
+
+on:
+  schedule:
+    # Run every Friday at 10:00 AM UTC
+    - cron: '0 10 * * 5'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        type: boolean
+        description: 'Run report generation without waiting for Friday (test mode)'
+        required: false
+        default: false
+      send_email:
+        type: boolean
+        description: 'Send email report to team'
+        required: false
+        default: true
+      debug_enabled:
+        type: boolean
+        description: 'Run with debug logging'
+        required: false
+        default: false
+
+jobs:
+  generate-report:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+        cache: 'pip'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+
+    - name: Run issue analyzer
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        DEBUG: ${{ inputs.debug_enabled || 'false' }}
+      run: |
+        echo "🔍 Running Terraform Issues Analyzer..."
+        echo "   Dry run: ${{ inputs.dry_run || 'false' }}"
+        echo "   Debug: ${{ inputs.debug_enabled || 'false' }}"
+        echo "   Send email: ${{ inputs.send_email || 'true' }}"
+        python script.py
+
+    - name: Get current date
+      id: date
+      run: echo "date=$(date +'%Y-%m-%d')" >> $GITHUB_OUTPUT
+
+    - name: Extract report statistics
+      id: stats
+      run: |
+        if [ -f "analysis_results/terraform_target_services_issues_report_en.md" ]; then
+          TOTAL=$(grep -oP 'Total Issues Found:\*\* \K\d+' analysis_results/terraform_target_services_issues_report_en.md || echo "N/A")
+          echo "total_issues=$TOTAL" >> $GITHUB_OUTPUT
+          echo "report_exists=true" >> $GITHUB_OUTPUT
+        else
+          echo "total_issues=0" >> $GITHUB_OUTPUT
+          echo "report_exists=false" >> $GITHUB_OUTPUT
+        fi
+
+    - name: Send email to team
+      if: ${{ (inputs.send_email == true || inputs.send_email == '' || github.event_name == 'schedule') && steps.stats.outputs.report_exists == 'true' }}
+      env:
+        SMTP_SERVER: ${{ secrets.SMTP_SERVER }}
+        SMTP_PORT: ${{ secrets.SMTP_PORT }}
+        SMTP_USERNAME: ${{ secrets.SMTP_USERNAME }}
+        SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+        EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
+      run: |
+        if [ -n "$SMTP_USERNAME" ] && [ -n "$SMTP_PASSWORD" ]; then
+          echo "📧 Sending email report to team..."
+          python3 send_team_email.py
+        else
+          echo "⚠️ Email credentials not configured. Skipping email."
+        fi
+
+    - name: Upload report as artifact
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: terraform-issues-report-${{ steps.date.outputs.date }}
+        path: analysis_results/terraform_target_services_issues_report_en.md
+        retention-days: 90
+
+    - name: Create workflow summary
+      if: always()
+      run: |
+        echo "## 📊 Terraform Issues Report" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "| Setting | Value |" >> $GITHUB_STEP_SUMMARY
+        echo "|---------|-------|" >> $GITHUB_STEP_SUMMARY
+        echo "| **Date** | ${{ steps.date.outputs.date }} |" >> $GITHUB_STEP_SUMMARY
+        echo "| **Trigger** | ${{ github.event_name }} |" >> $GITHUB_STEP_SUMMARY
+        echo "| **Dry Run** | ${{ inputs.dry_run || 'false' }} |" >> $GITHUB_STEP_SUMMARY
+        echo "| **Debug Mode** | ${{ inputs.debug_enabled || 'false' }} |" >> $GITHUB_STEP_SUMMARY
+        echo "| **Send Email** | ${{ inputs.send_email || 'true' }} |" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        if [ "${{ steps.stats.outputs.report_exists }}" == "true" ]; then
+          echo "### ✅ Report Generated Successfully" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Total Issues Found:** ${{ steps.stats.outputs.total_issues }}" >> $GITHUB_STEP_SUMMARY
+        else
+          echo "### ❌ Report Generation Failed" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Check the logs for more details." >> $GITHUB_STEP_SUMMARY
+        fi
+
