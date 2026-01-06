@@ -76,13 +76,20 @@ jobs:
         SMTP_USERNAME: ${{ secrets.SMTP_USERNAME }}
         SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
         EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
+        TEAM_EMAILS: ${{ secrets.TEAM_EMAILS }}
       run: |
-        if [ -n "$SMTP_USERNAME" ] && [ -n "$SMTP_PASSWORD" ]; then
-          echo "📧 Sending email report to team..."
-          python3 send_team_email.py
-        else
-          echo "⚠️ Email credentials not configured. Skipping email."
+        if [ -z "$SMTP_USERNAME" ] || [ -z "$SMTP_PASSWORD" ]; then
+          echo "⚠️ SMTP credentials not configured. Skipping email."
+          echo "   Please set SMTP_USERNAME and SMTP_PASSWORD secrets."
+          exit 0
         fi
+        if [ -z "$TEAM_EMAILS" ]; then
+          echo "⚠️ TEAM_EMAILS not configured. Skipping email."
+          echo "   Please set TEAM_EMAILS secret (comma-separated list)."
+          exit 0
+        fi
+        echo "📧 Sending email report to team..."
+        python3 send_team_email.py
 
     - name: Upload report as artifact
       if: always()
