@@ -148,7 +148,16 @@ def get_team_emails() -> List[str]:
         >>> print(emails)
         ['alice@example.com', 'bob@example.com']
     """
-    emails_str = os.getenv('TEAM_EMAILS', '')
+    emails_str = os.getenv(
+        'TEAM_EMAILS',
+        ','.join([
+            'pmartins@ciandt.com',
+            'acardinalli@ciandt.com',
+            'mportocarrero@ciandt.com',
+            'matheusaleixo@ciandt.com',
+            'victorsantos@ciandt.com',
+        ]),
+    )
     if not emails_str:
         return []
     return [email.strip() for email in emails_str.split(',') if email.strip()]
