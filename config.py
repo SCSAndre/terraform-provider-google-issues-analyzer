@@ -25,15 +25,6 @@ import os
 from pathlib import Path
 from typing import List, Dict, Any
 
-from secrets_provider import get_secret
-
-
-def _env_to_bool(value: str | None, default: bool = False) -> bool:
-    """Parse common truthy/falsey environment values."""
-    if value is None:
-        return default
-    return value.strip().lower() in {"1", "true", "yes", "on"}
-
 
 # =============================================================================
 # API Configuration
@@ -42,13 +33,7 @@ def _env_to_bool(value: str | None, default: bool = False) -> bool:
 #: GitHub personal access token for API authentication.
 #: Without a token, API requests are limited to 60/hour.
 #: With a token, the limit increases to 5000/hour.
-GITHUB_TOKEN: str | None = get_secret("GITHUB_TOKEN")
-
-#: Secret backend selector: env (default) or gcp
-SECRET_BACKEND: str = (os.getenv("SECRET_BACKEND") or "env").strip().lower()
-
-#: GCP project ID used when SECRET_BACKEND=gcp
-GCP_PROJECT_ID: str = os.getenv("GCP_PROJECT_ID", "")
+GITHUB_TOKEN: str | None = os.getenv("GITHUB_TOKEN")
 
 #: Target repository in "owner/repo" format
 TARGET_REPO: str = os.getenv("TARGET_REPO", "hashicorp/terraform-provider-google")
@@ -95,22 +80,6 @@ INITIAL_BACKOFF: int = 2
 
 
 # =============================================================================
-# Experimental NLP Shadow Mode
-# =============================================================================
-
-#: Enables logging-only comparison between baseline and experimental trigram NLP scoring.
-ENABLE_TRIGRAM_SHADOW_MODE: bool = _env_to_bool(
-    os.getenv("ENABLE_TRIGRAM_SHADOW_MODE"),
-    default=False,
-)
-
-#: Absolute score delta threshold used to emit shadow comparison logs.
-SHADOW_SCORE_DELTA_THRESHOLD: float = float(
-    os.getenv("SHADOW_SCORE_DELTA_THRESHOLD", "15.0")
-)
-
-
-# =============================================================================
 # Output Configuration
 # =============================================================================
 
@@ -130,10 +99,10 @@ SMTP_SERVER: str = os.getenv('SMTP_SERVER') or 'smtp.gmail.com'
 SMTP_PORT: int = int(os.getenv('SMTP_PORT') or '587')
 
 #: SMTP authentication username
-SMTP_USERNAME: str = get_secret('SMTP_USERNAME', '') or ''
+SMTP_USERNAME: str = os.getenv('SMTP_USERNAME', '')
 
 #: SMTP authentication password (use app password for Gmail)
-SMTP_PASSWORD: str = get_secret('SMTP_PASSWORD', '') or ''
+SMTP_PASSWORD: str = os.getenv('SMTP_PASSWORD', '')
 
 #: Email sender address (defaults to SMTP_USERNAME if not set)
 EMAIL_FROM: str = os.getenv('EMAIL_FROM', '') or SMTP_USERNAME
@@ -179,7 +148,7 @@ def get_team_emails() -> List[str]:
         >>> print(emails)
         ['alice@example.com', 'bob@example.com']
     """
-    emails_str = get_secret('TEAM_EMAILS', '') or ''
+    emails_str = os.getenv('TEAM_EMAILS', '')
     if not emails_str:
         return []
     return [email.strip() for email in emails_str.split(',') if email.strip()]
@@ -234,12 +203,6 @@ def validate_config(raise_on_error: bool = False) -> Dict[str, Any]:
             f"TFIDF_WEIGHT ({TFIDF_WEIGHT}) + REGEX_WEIGHT ({REGEX_WEIGHT}) "
             f"= {TFIDF_WEIGHT + REGEX_WEIGHT}, consider making them sum to 1.0"
         )
-
-    # Validate shadow mode threshold
-    if SHADOW_SCORE_DELTA_THRESHOLD < 0:
-        errors.append(
-            f"SHADOW_SCORE_DELTA_THRESHOLD must be >= 0, got {SHADOW_SCORE_DELTA_THRESHOLD}"
-        )
     
     # Check output directory
     if not OUTPUT_DIR.exists():
@@ -273,8 +236,6 @@ def get_config_summary() -> Dict[str, Any]:
     return {
         "target_repo": TARGET_REPO,
         "github_token_set": bool(GITHUB_TOKEN),
-        "secret_backend": SECRET_BACKEND,
-        "gcp_project_id_set": bool(GCP_PROJECT_ID),
         "min_confidence_threshold": MIN_CONFIDENCE_THRESHOLD,
         "high_confidence_threshold": HIGH_CONFIDENCE_THRESHOLD,
         "tfidf_weight": TFIDF_WEIGHT,
@@ -283,8 +244,6 @@ def get_config_summary() -> Dict[str, Any]:
         "request_delay": REQUEST_DELAY,
         "comment_threshold": COMMENT_THRESHOLD,
         "max_retries": MAX_RETRIES,
-        "enable_trigram_shadow_mode": ENABLE_TRIGRAM_SHADOW_MODE,
-        "shadow_score_delta_threshold": SHADOW_SCORE_DELTA_THRESHOLD,
         "output_dir": str(OUTPUT_DIR),
         "smtp_server": SMTP_SERVER,
         "smtp_port": SMTP_PORT,
