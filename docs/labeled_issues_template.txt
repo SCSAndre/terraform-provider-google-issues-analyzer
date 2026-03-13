@@ -1,0 +1,5 @@
+title,body,labels,is_relevant,category,split
+Cloud Armor security policy rule not applied,Terraform apply creates policy but requests are not blocked,cloud-armor|bug,true,Cloud Armor,train
+Cloud Armor rate-limit threshold unexpectedly ignored,Rate-based ban does not trigger under high request volume,cloud-armor|enhancement,true,Cloud Armor,validation
+Compute instance documentation typo,Found a typo in docs for compute instance creation,documentation,false,,test
+Networking question unrelated to Cloud Armor,Need help understanding generic VPC route behavior,question,false,,test

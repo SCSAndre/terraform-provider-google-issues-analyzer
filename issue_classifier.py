@@ -1,7 +1,7 @@
 """Issue classification using TF-IDF and regex matching."""
 import re
 import logging
-from typing import Dict, Tuple, Optional, List
+from typing import Dict, Tuple, Optional, List, Any
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 import numpy as np
@@ -24,6 +24,11 @@ class IssueClassifier:
         self._vectorizer: Optional[TfidfVectorizer] = None
         self._category_vectors = None
         self._initialize_tfidf()
+
+        # Experimental shadow vectorizer (tri-grams). Logging-only usage.
+        self._shadow_vectorizer: Optional[TfidfVectorizer] = None
+        self._shadow_category_vectors = None
+        self._initialize_shadow_tfidf()
 
     def _initialize_tfidf(self) -> None:
         """Pre-fits TF-IDF vectorizer with service category documents."""
@@ -50,6 +55,30 @@ class IssueClassifier:
             logger.error(f"Error initializing TF-IDF vectorizer: {e}")
             self._vectorizer = None
             self._category_vectors = None
+
+    def _initialize_shadow_tfidf(self) -> None:
+        """Pre-fits experimental tri-gram TF-IDF vectorizer for shadow comparisons."""
+        try:
+            category_docs = []
+            for category in self._categories:
+                cat_text = " ".join(self.service_terms[category])
+                category_docs.append(cat_text)
+
+            self._shadow_vectorizer = TfidfVectorizer(
+                stop_words='english',
+                ngram_range=(1, 3),
+                max_features=8000,
+                min_df=1,
+            )
+            self._shadow_category_vectors = self._shadow_vectorizer.fit_transform(category_docs)
+            logger.debug(
+                "Shadow TF-IDF vectorizer initialized with %d features",
+                len(self._shadow_vectorizer.get_feature_names_out()),
+            )
+        except Exception as e:
+            logger.warning("Error initializing shadow TF-IDF vectorizer: %s", e)
+            self._shadow_vectorizer = None
+            self._shadow_category_vectors = None
 
     def classify_issue(self, issue: Dict) -> Tuple[bool, Optional[str], float]:
         """
@@ -172,6 +201,23 @@ class IssueClassifier:
             return similarities
         except Exception as e:
             logger.error(f"Error in TF-IDF fallback classification: {e}")
+            return {}
+
+    def _classify_with_tfidf_trigram_shadow(self, issue_text: str) -> Dict[str, float]:
+        """Experimental tri-gram TF-IDF scoring used only for shadow comparisons."""
+        if self._shadow_vectorizer is None or self._shadow_category_vectors is None:
+            return {}
+
+        try:
+            issue_vector = self._shadow_vectorizer.transform([issue_text])
+            similarities: Dict[str, float] = {}
+            for i, category in enumerate(self._categories):
+                cat_vector = self._shadow_category_vectors[i]
+                sim = cosine_similarity(issue_vector, cat_vector)
+                similarities[category] = float(sim[0][0]) * 100
+            return similarities
+        except Exception as e:
+            logger.warning("Error in shadow TF-IDF classification: %s", e)
             return {}
 
     def _calculate_regex_scores(self, issue: Dict) -> Dict[str, float]:
@@ -304,6 +350,44 @@ class IssueClassifier:
         final_scores = self._combine_scores(tfidf_scores, regex_scores)
         
         return self._evaluate_scores_with_related(final_scores)
+
+    def get_shadow_score_comparison(self, issue: Dict[str, Any]) -> Dict[str, Any]:
+        """Return baseline vs experimental scoring details without changing decisions."""
+        issue_text = self._build_issue_text(issue)
+        regex_scores = self._calculate_regex_scores(issue)
+
+        baseline_scores = self._combine_scores(
+            self._classify_with_tfidf(issue_text),
+            regex_scores,
+        )
+        shadow_scores = self._combine_scores(
+            self._classify_with_tfidf_trigram_shadow(issue_text),
+            regex_scores,
+        )
+
+        baseline_category = None
+        baseline_score = 0.0
+        if baseline_scores:
+            baseline_category, baseline_score = max(baseline_scores.items(), key=lambda x: x[1])
+
+        shadow_category = None
+        shadow_score = 0.0
+        if shadow_scores:
+            shadow_category, shadow_score = max(shadow_scores.items(), key=lambda x: x[1])
+
+        return {
+            "baseline": {
+                "category": baseline_category,
+                "score": float(baseline_score),
+                "is_relevant": bool(baseline_score >= MIN_CONFIDENCE_THRESHOLD),
+            },
+            "shadow": {
+                "category": shadow_category,
+                "score": float(shadow_score),
+                "is_relevant": bool(shadow_score >= MIN_CONFIDENCE_THRESHOLD),
+            },
+            "score_delta": float(shadow_score - baseline_score),
+        }
 
     def _log_scores(self, issue: Dict, scores: Dict[str, float]) -> None:
         """Logs classification scores for debugging."""

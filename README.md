@@ -1,247 +1,243 @@
-# 🔍 Terraform Provider Google - Issue Analyzer
+# Terraform Provider Google Issues Analyzer
 
-[![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
-[![Tests](https://img.shields.io/badge/tests-239%20passed-brightgreen.svg)](https://github.com/SCSAndre/terraform-provider-google-issues-analyzer)
-[![Coverage](https://img.shields.io/badge/coverage-78%25-green.svg)](https://github.com/SCSAndre/terraform-provider-google-issues-analyzer)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+Cloud Armor-focused issue intelligence for `hashicorp/terraform-provider-google`.
 
-An intelligent issue analyzer that identifies **open and available** issues from the [Terraform Provider Google](https://github.com/hashicorp/terraform-provider-google) repository, focusing on specific GCP services. Perfect for finding contribution opportunities or tracking issues relevant to your infrastructure.
+This project scans open GitHub issues, identifies Cloud Armor-relevant items, checks whether they are truly available (not assigned/claimed/in progress), and generates Markdown + HTML reports for maintainers and stakeholders.
 
-## 🎯 What It Does
+## Purpose
 
-This tool automatically:
-- **Scans** 2,000+ open issues from the Terraform Provider Google repository
-- **Classifies** issues using ML-based TF-IDF and pattern matching
-- **Filters** to show only *truly available* issues (no assigned, claimed, or in-progress)
-- **Generates** detailed markdown reports grouped by service category
+Use this analyzer to:
+- Track Cloud Armor issue backlog quality and contributor opportunities.
+- Prioritize issues with confidence scoring (TF-IDF + regex heuristics).
+- Share regular report snapshots with engineering and client stakeholders.
 
-### Target Services
-| Service | Description |
-|---------|-------------|
-| 🔄 **Load Balancers** | Regional/Global LBs, URL Maps, Backend Services, Health Checks |
-| 🛡️ **Cloud Armor** | Security policies, WAF rules, DDoS protection |
-| 🔗 **Private Service Connect** | PSC endpoints, forwarding rules, service attachments |
+## Current Scope
 
-## ⚡ Quick Start
+- Service scope: **Cloud Armor only**.
+- Repository target default: `hashicorp/terraform-provider-google`.
+- Output: `analysis_results/terraform_target_services_issues_report_en.md` and HTML report.
+
+## How It Works
+
+1. `github_client.py` fetches open issues from GitHub (paginated with retry/rate-limit handling).
+2. `issue_classifier.py` classifies Cloud Armor relevance.
+3. `availability_checker.py` validates that issues are claimable.
+4. `report_generator.py` and `html_report_generator.py` build reports.
+
+## Quick Start
 
 ```bash
-# Clone the repository
-git clone https://github.com/SCSAndre/terraform-provider-google-issues-analyzer.git
-cd terraform-provider-google-issues-analyzer
-
-# Create virtual environment
 python3 -m venv venv
 source venv/bin/activate
-
-# Install dependencies
 pip install -r requirements.txt
-
-# (Recommended) Set GitHub token for higher rate limits
-export GITHUB_TOKEN="your_github_token_here"
-
-# Run the analysis
+export GITHUB_TOKEN="your_github_token"
 python script.py
 ```
 
-## 📊 Sample Output
+Open generated outputs in `analysis_results/`.
 
-```
-Starting Terraform Provider Google issue analysis
-Fetching issues from GitHub API
-Progress: fetched 2300 issues
-Analyzing issues for relevance and availability
-Analysis complete: 42 relevant available issues found
+## Configuration
 
-Report generated: analysis_results/terraform_target_services_issues_report_en.md
-```
-
-The generated report includes:
-- 📈 Summary table with issue counts per category
-- 🎯 Confidence scores for each classification
-- 🔗 Direct links to GitHub issues
-- 📅 Creation dates and comment counts
-
-## 🏗️ Architecture
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                         script.py                               │
-│                    (Main Entry Point)                           │
-└─────────────────┬───────────────────────────────────────────────┘
-                  │
-    ┌─────────────┼─────────────┬─────────────────────┐
-    ▼             ▼             ▼                     ▼
-┌─────────┐ ┌───────────┐ ┌────────────┐ ┌──────────────────┐
-│ GitHub  │ │  Issue    │ │Availability│ │     Report       │
-│ Client  │ │Classifier │ │  Checker   │ │    Generator     │
-└────┬────┘ └─────┬─────┘ └─────┬──────┘ └────────┬─────────┘
-     │            │             │                  │
-     │     ┌──────┴──────┐      │                  │
-     │     │ TF-IDF      │      │                  │
-     │     │ + Regex     │      │                  │
-     │     │ Scoring     │      │                  │
-     │     └─────────────┘      │                  │
-     ▼                          ▼                  ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                    Service Definitions                          │
-│         (Keywords, patterns, terms per service)                 │
-└─────────────────────────────────────────────────────────────────┘
-```
-
-### Key Components
-
-| Component | Purpose |
-|-----------|---------|
-| `github_client.py` | GitHub API client with rate limiting, retries, and caching |
-| `issue_classifier.py` | TF-IDF + regex-based classification with confidence scoring |
-| `availability_checker.py` | Determines if an issue is truly available for contribution |
-| `report_generator.py` | Generates structured markdown reports |
-| `config.py` | Configuration management with validation |
-| `exceptions.py` | Custom exception hierarchy for precise error handling |
-| `logging_config.py` | Structured logging with JSON/console output |
-| `validators.py` | Input validation and sanitization |
-
-## 🔧 Configuration
-
-Environment variables:
+Set environment variables as needed:
 
 ```bash
-# Required for higher API rate limits (optional but recommended)
 export GITHUB_TOKEN="your_github_token"
-
-# Classification settings
-export MIN_CONFIDENCE_THRESHOLD=30  # Minimum confidence score (0-100)
-export HIGH_CONFIDENCE_THRESHOLD=70 # High confidence threshold
-
-# Output settings
+export TARGET_REPO="hashicorp/terraform-provider-google"
+export MIN_CONFIDENCE_THRESHOLD=75
 export OUTPUT_DIR="analysis_results"
-export LOG_LEVEL="INFO"             # DEBUG, INFO, WARNING, ERROR
-export LOG_FORMAT="console"         # 'console' or 'json'
 ```
 
-Configuration file (`config.py`) options:
-
-| Setting | Default | Description |
-|---------|---------|-------------|
-| `MIN_CONFIDENCE_THRESHOLD` | 30 | Issues below this score are filtered out |
-| `HIGH_CONFIDENCE_THRESHOLD` | 70 | Threshold for "high confidence" classification |
-| `COMMENT_THRESHOLD` | 5 | Issues with more comments may be "in discussion" |
-| `TFIDF_WEIGHT` | 0.7 | Weight for TF-IDF scoring in classification |
-| `REGEX_WEIGHT` | 0.3 | Weight for regex pattern matching |
-
-## 📅 Automation
-
-### GitHub Actions (Recommended)
-
-The repository includes pre-configured workflows for automated weekly reports:
-
-1. Push to your GitHub repository
-2. (Optional) Add secrets for email notifications:
-   - `SMTP_USERNAME`: Sending email address
-   - `SMTP_PASSWORD`: Email password or App Password
-   - `EMAIL_RECIPIENTS`: Comma-separated recipient list
-
-The workflow runs automatically every Friday at 12:00 UTC.
-
-### Cron Job (Local/Server)
+Email settings (optional):
 
 ```bash
-# Edit crontab
+export SMTP_SERVER="smtp.gmail.com"
+export SMTP_PORT="587"
+export SMTP_USERNAME="your-email@example.com"
+export SMTP_PASSWORD="your-app-password"
+export EMAIL_FROM="your-email@example.com"
+export TEAM_EMAILS="a@example.com,b@example.com"
+```
+
+## Secret Backends (Phase 2)
+
+By default, secrets are read from environment variables (`SECRET_BACKEND=env`).
+
+You can optionally use Google Cloud Secret Manager with env fallback during migration.
+
+```bash
+export SECRET_BACKEND="gcp"
+export GCP_PROJECT_ID="your-gcp-project-id"
+export GCP_SECRET_PREFIX="terraform-issues-analyzer-"
+export SECRET_FALLBACK_TO_ENV="true"
+```
+
+### GCP Secret Naming Convention
+
+The app requests secret names by key, optionally prefixed. With `GCP_SECRET_PREFIX="terraform-issues-analyzer-"`, these names are expected in Secret Manager:
+
+- `terraform-issues-analyzer-GITHUB_TOKEN`
+- `terraform-issues-analyzer-SMTP_USERNAME`
+- `terraform-issues-analyzer-SMTP_PASSWORD`
+- `terraform-issues-analyzer-TEAM_EMAILS`
+
+Migration recommendation:
+- Keep `SECRET_FALLBACK_TO_ENV=true` while onboarding.
+- Switch to `SECRET_FALLBACK_TO_ENV=false` after validation in CI/production.
+
+If `SECRET_BACKEND=gcp` is set but `GCP_PROJECT_ID` is missing, the app falls back safely and logs a warning.
+
+## Weekly Automation (Monday 10:00 AM PT)
+
+### Option A: Local cron (exact PT if host timezone is PT)
+
+```bash
 crontab -e
-
-# Add: Run every Friday at noon
-0 12 * * 5 /path/to/project/scheduled_report.sh
 ```
 
-## 🧪 Testing
+```cron
+0 10 * * 1 /home/acardinalli/dev/terraform/issues_analyzer/scheduled_report.sh
+```
+
+### Option B: GitHub Actions
+
+Workflow file: `.github/workflows/terraform_report.yml`.
+
+Note: GitHub Actions cron is UTC and may shift by 1 hour in DST transitions.
+
+## Testing
 
 ```bash
-# Run all tests
 python -m pytest
-
-# Run with coverage report
-python -m pytest --cov=. --cov-report=term-missing
-
-# Run specific test file
-python -m pytest test_github_client.py -v
 ```
 
-**Test Coverage:** 78% across 239 tests
+## Offline Quality Evaluation (Phase 3 Step 2)
 
-| Module | Coverage |
-|--------|----------|
-| `script.py` | 100% |
-| `report_generator.py` | 100% |
-| `availability_checker.py` | 98% |
-| `github_client.py` | 92% |
-| `validators.py` | 95% |
+Use the offline harness to compare baseline vs shadow scoring against a labeled dataset.
 
-## 📁 Project Structure
+### Labeled CSV schema
 
-```
-terraform-provider-google-issues-analyzer/
-├── 📄 script.py                 # Main entry point
-├── 📄 github_client.py          # GitHub API client
-├── 📄 issue_classifier.py       # ML-based classification
-├── 📄 availability_checker.py   # Availability determination
-├── 📄 report_generator.py       # Report generation
-├── 📄 service_definitions.py    # Service keywords/patterns
-├── 📄 config.py                 # Configuration management
-├── 📄 exceptions.py             # Custom exceptions
-├── 📄 logging_config.py         # Logging setup
-├── 📄 validators.py             # Input validation
-├── 📄 types_definitions.py      # Type definitions
-├── 🧪 test_*.py                 # Test files
-├── 📄 requirements.txt          # Production dependencies
-├── 📄 requirements-dev.txt      # Development dependencies
-├── 📄 pyproject.toml            # Project configuration
-├── 🔧 run_report.sh             # Manual run script
-├── 🔧 scheduled_report.sh       # Automation script
-├── 📧 send_team_email.py        # Email notifications
-└── 📁 analysis_results/         # Generated reports
+Required columns:
+- `title`
+- `body`
+- `is_relevant` (`true`/`false`, also supports `1`/`0`, `yes`/`no`)
+
+Optional columns:
+- `labels` (delimiters: `|`, `,`, or `;`)
+- `category` (for relevant issues, use `Cloud Armor`)
+- `split` (`train`, `validation`, or `test`)
+
+Example:
+
+```csv
+title,body,labels,is_relevant,category,split
+Cloud Armor policy issue,Rule not applied,cloud-armor|bug,true,Cloud Armor,train
+Compute docs typo,Minor text fix,documentation,false,,test
 ```
 
-## 🤝 Contributing
-
-Contributions are welcome! Here's how to get started:
-
-1. **Fork** the repository
-2. **Create** a feature branch (`git checkout -b feature/amazing-feature`)
-3. **Install** dev dependencies (`pip install -r requirements-dev.txt`)
-4. **Write** tests for your changes
-5. **Run** the test suite (`python -m pytest`)
-6. **Commit** your changes (`git commit -m 'Add amazing feature'`)
-7. **Push** to the branch (`git push origin feature/amazing-feature`)
-8. **Open** a Pull Request
-
-### Development Setup
+Run evaluation:
 
 ```bash
-# Install development dependencies
-pip install -r requirements-dev.txt
-
-# Run linting
-flake8 .
-
-# Run type checking
-mypy .
-
-# Run tests with coverage
-pytest --cov=. --cov-report=html
+python3 evaluate_classifier_quality.py --input path/to/labeled_issues.csv
+python3 evaluate_classifier_quality.py --input path/to/labeled_issues.csv --output analysis_results/shadow_eval.json
+python3 evaluate_classifier_quality.py --input path/to/labeled_issues.csv --split test
 ```
 
-## 📜 License
+Use the starter template at `docs/labeled_issues_template.txt` to begin labeling (CSV-formatted content).
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+Optional CI quality gate (fails with exit code `2` on unacceptable shadow regression):
 
-## 🙏 Acknowledgments
+```bash
+python3 evaluate_classifier_quality.py \
+  --input path/to/labeled_issues.csv \
+  --fail-on-shadow-regression \
+  --max-precision-drop 0.02 \
+  --max-recall-drop 0.02 \
+  --max-f1-drop 0.02 \
+  --min-support 30 \
+  --min-relevant-support 10 \
+  --suggest-thresholds
+```
 
-- [HashiCorp](https://www.hashicorp.com/) for the Terraform Provider Google
-- [GitHub API](https://docs.github.com/en/rest) for issue data access
-- [scikit-learn](https://scikit-learn.org/) for TF-IDF implementation
+Notes:
+- Gate enforcement is skipped (pass with reason) when dataset support is too low.
+- `--suggest-thresholds` emits recommended drop tolerances from observed deltas.
 
----
+The command prints JSON metrics including baseline/shadow precision, recall, F1, accuracy, category accuracy, split distribution, per-label slices, and shadow classification flips.
 
-<p align="center">
-  Made with ❤️ for the Terraform community
-</p>
+Governance guidance is in `docs/dataset_governance.txt`.
+
+### GitHub Actions quality workflow
+
+The repository includes `.github/workflows/offline_shadow_quality.yml`:
+- PR trigger: informational run with artifact output.
+- Weekly schedule: Monday 16:30 UTC quality-gate run.
+- Manual run: supports custom dataset path, split, and metric-drop thresholds.
+
+Recommended manual gate run:
+
+```bash
+# GitHub UI: Actions -> Offline Shadow Quality -> Run workflow
+# Set enforce_gate=true and split=test
+```
+
+## Observability Notes
+
+- Use structured logging (`LOG_FORMAT=json`) in CI/prod for easier parsing.
+- Use `LOG_LEVEL=INFO` in production and `LOG_LEVEL=DEBUG` for incident analysis.
+- Startup config summary includes non-sensitive backend status (for example, whether `GCP_PROJECT_ID` is set).
+
+### Optional NLP Shadow Mode (Phase 3 Scaffold)
+
+Shadow mode compares baseline scoring vs experimental tri-gram TF-IDF scoring in logs only.
+
+```bash
+export ENABLE_TRIGRAM_SHADOW_MODE="true"
+export SHADOW_SCORE_DELTA_THRESHOLD="15.0"
+```
+
+This does **not** change inclusion/exclusion decisions in reports.
+
+## Optional GCP Analytics (BigQuery + Looker Studio)
+
+Not required for core report generation.
+
+- **BigQuery**: pay-as-you-go (storage + query bytes scanned), with free-tier quotas that vary by account/billing status.
+- **Looker Studio**: generally free for dashboarding, but query costs still come from underlying BigQuery usage.
+- **Recommendation**: enable billing budgets, alerts, table partitioning, and query limits before production rollout.
+
+Always verify current quotas/pricing in your GCP project:
+- BigQuery pricing/quota pages in Google Cloud Console
+- Billing budgets and alerts in Cloud Billing
+
+## Security Notes
+
+- Prefer secrets from CI secret stores or cloud secret managers over local `.env` files.
+- Use a GitHub token to avoid low unauthenticated API limits.
+- Avoid committing generated reports if they contain sensitive operational metadata.
+
+## Repository Hygiene
+
+Suggested baseline:
+- Keep generated outputs under `analysis_results/` (gitignored if not needed in history).
+- Keep runtime scripts and CI workflows separated and minimal.
+- Remove stale docs/scripts only after validating they are not referenced by automation.
+
+## Project Layout
+
+- `script.py`: orchestrator
+- `github_client.py`: GitHub data fetching
+- `issue_classifier.py`: ML + heuristic classifier
+- `availability_checker.py`: assignment/claim checks
+- `report_generator.py`: markdown reporting
+- `html_report_generator.py`: HTML reporting
+- `send_team_email.py`: email distribution
+- `scheduled_report.sh`: automation entrypoint
+
+## Contributing
+
+```bash
+pip install -r requirements-dev.txt
+python -m pytest
+```
+
+For major changes, open an issue first with proposed design and rollout/rollback plan.

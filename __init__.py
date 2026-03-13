@@ -1,8 +1,7 @@
 """Terraform Provider Google - Issue Analyzer.
 
 This package analyzes open issues from the Terraform Provider Google repository
-to identify available issues related to GCP services including Load Balancers,
-Cloud Armor, and Private Service Connect.
+to identify available issues related to Cloud Armor.
 
 The package provides:
 - GitHub API client with rate limiting and error handling

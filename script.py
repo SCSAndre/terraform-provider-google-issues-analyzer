@@ -4,7 +4,7 @@
 
 This module serves as the main entry point for analyzing GitHub issues
 from the Terraform Provider Google repository. It identifies issues related
-to specific GCP services (Load Balancers, Cloud Armor, Private Service Connect)
+to Cloud Armor
 and generates structured reports.
 
 Usage:
@@ -28,7 +28,12 @@ Example:
 import sys
 from typing import Dict, List, Any
 
-from config import OUTPUT_DIR, validate_config
+from config import (
+    OUTPUT_DIR,
+    ENABLE_TRIGRAM_SHADOW_MODE,
+    SHADOW_SCORE_DELTA_THRESHOLD,
+    validate_config,
+)
 from github_client import GitHubClient
 from issue_classifier import IssueClassifier
 from availability_checker import AvailabilityChecker
@@ -216,6 +221,11 @@ def analyze_issues(
         "relevant_available": 0,
         "below_confidence_threshold": 0,
     }
+    shadow_stats = {
+        "checked": 0,
+        "classification_flips": 0,
+        "large_score_deltas": 0,
+    }
 
     for issue in issues:
         # Skip pull requests
@@ -225,6 +235,39 @@ def analyze_issues(
 
         # Check relevance - get all matching categories
         is_relevant, category, confidence, related_categories = classifier.classify_issue_with_related(issue)
+
+        # Shadow-mode comparison is logging-only and does not alter classification outcomes.
+        if ENABLE_TRIGRAM_SHADOW_MODE:
+            shadow_stats["checked"] += 1
+            comparison = classifier.get_shadow_score_comparison(issue)
+            baseline = comparison["baseline"]
+            shadow = comparison["shadow"]
+            score_delta = abs(comparison["score_delta"])
+
+            if baseline["is_relevant"] != shadow["is_relevant"]:
+                shadow_stats["classification_flips"] += 1
+                logger.info(
+                    "Shadow mode classification flip detected",
+                    extra={
+                        "issue_number": issue.get("number"),
+                        "baseline": baseline,
+                        "shadow": shadow,
+                    },
+                )
+
+            if score_delta >= SHADOW_SCORE_DELTA_THRESHOLD:
+                shadow_stats["large_score_deltas"] += 1
+                logger.info(
+                    "Shadow mode score delta exceeded threshold",
+                    extra={
+                        "issue_number": issue.get("number"),
+                        "score_delta": round(score_delta, 3),
+                        "threshold": SHADOW_SCORE_DELTA_THRESHOLD,
+                        "baseline": baseline,
+                        "shadow": shadow,
+                    },
+                )
+
         if not is_relevant:
             stats["not_relevant"] += 1
             continue
@@ -289,6 +332,12 @@ def analyze_issues(
         "Issue analysis complete",
         extra={"stats": stats}
     )
+
+    if ENABLE_TRIGRAM_SHADOW_MODE:
+        logger.info(
+            "Shadow mode summary",
+            extra={"shadow_stats": shadow_stats},
+        )
     
     return relevant_issues
 

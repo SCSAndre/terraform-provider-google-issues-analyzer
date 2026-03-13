@@ -421,6 +421,64 @@ class TestAnalyzeIssues(unittest.TestCase):
 
         self.assertEqual(len(result), 2)  # Only 2 are relevant AND available
 
+    def test_analyze_shadow_mode_disabled_does_not_call_comparison(self):
+        """Shadow comparison should not run when flag is disabled."""
+        from script import analyze_issues
+
+        mock_classifier = Mock()
+        mock_classifier.classify_issue_with_related.return_value = (True, 'Cloud Armor', 88.0, [])
+        mock_checker = Mock()
+        mock_checker.is_issue_available.return_value = (True, None)
+
+        issues = [{
+            'number': 10,
+            'title': 'Cloud Armor issue',
+            'html_url': 'https://github.com/test/10',
+            'state': 'open',
+            'created_at': '2025-01-01T00:00:00Z',
+            'updated_at': '2025-01-01T00:00:00Z',
+            'labels': [],
+            'assignees': [],
+            'comments': 0,
+        }]
+
+        with patch('script.ENABLE_TRIGRAM_SHADOW_MODE', False):
+            analyze_issues(issues, mock_classifier, mock_checker)
+
+        mock_classifier.get_shadow_score_comparison.assert_not_called()
+
+    def test_analyze_shadow_mode_enabled_calls_comparison(self):
+        """Shadow comparison should run when flag is enabled."""
+        from script import analyze_issues
+
+        mock_classifier = Mock()
+        mock_classifier.classify_issue_with_related.return_value = (True, 'Cloud Armor', 88.0, [])
+        mock_classifier.get_shadow_score_comparison.return_value = {
+            'baseline': {'category': 'Cloud Armor', 'score': 70.0, 'is_relevant': False},
+            'shadow': {'category': 'Cloud Armor', 'score': 90.0, 'is_relevant': True},
+            'score_delta': 20.0,
+        }
+        mock_checker = Mock()
+        mock_checker.is_issue_available.return_value = (True, None)
+
+        issues = [{
+            'number': 11,
+            'title': 'Cloud Armor issue',
+            'html_url': 'https://github.com/test/11',
+            'state': 'open',
+            'created_at': '2025-01-01T00:00:00Z',
+            'updated_at': '2025-01-01T00:00:00Z',
+            'labels': [],
+            'assignees': [],
+            'comments': 0,
+        }]
+
+        with patch('script.ENABLE_TRIGRAM_SHADOW_MODE', True), \
+             patch('script.SHADOW_SCORE_DELTA_THRESHOLD', 15.0):
+            analyze_issues(issues, mock_classifier, mock_checker)
+
+        mock_classifier.get_shadow_score_comparison.assert_called_once()
+
 
 class TestGenerateReport(unittest.TestCase):
     """Tests for generate_report function."""

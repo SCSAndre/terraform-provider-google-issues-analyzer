@@ -1,0 +1,134 @@
+name: Offline Shadow Quality
+
+on:
+  pull_request:
+    paths:
+      - "issue_classifier.py"
+      - "offline_evaluator.py"
+      - "service_definitions.py"
+      - "config.py"
+      - "docs/labeled_issues_template.txt"
+      - "docs/dataset_governance.txt"
+      - ".github/workflows/offline_shadow_quality.yml"
+  schedule:
+    # Weekly quality gate before Monday report cycle (UTC)
+    - cron: "30 16 * * 1"
+  workflow_dispatch:
+    inputs:
+      enforce_gate:
+        description: "Fail the run if shadow metrics regress beyond thresholds"
+        type: boolean
+        required: false
+        default: false
+      split:
+        description: "Optional split filter (train|validation|test)"
+        type: string
+        required: false
+        default: "test"
+      dataset_path:
+        description: "Dataset path relative to repository"
+        type: string
+        required: false
+        default: "docs/labeled_issues_template.txt"
+      max_precision_drop:
+        description: "Allowed precision drop baseline-shadow"
+        type: string
+        required: false
+        default: "0.05"
+      max_recall_drop:
+        description: "Allowed recall drop baseline-shadow"
+        type: string
+        required: false
+        default: "0.05"
+      max_f1_drop:
+        description: "Allowed F1 drop baseline-shadow"
+        type: string
+        required: false
+        default: "0.05"
+      min_support:
+        description: "Minimum dataset size for enforcing gate"
+        type: string
+        required: false
+        default: "30"
+      min_relevant_support:
+        description: "Minimum relevant issue count for enforcing gate"
+        type: string
+        required: false
+        default: "10"
+
+permissions:
+  contents: read
+
+jobs:
+  evaluate-shadow:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+
+      - name: Resolve runtime parameters
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "DATASET_PATH=${{ inputs.dataset_path }}" >> "$GITHUB_ENV"
+            echo "SPLIT=${{ inputs.split }}" >> "$GITHUB_ENV"
+            echo "MAX_PRECISION_DROP=${{ inputs.max_precision_drop }}" >> "$GITHUB_ENV"
+            echo "MAX_RECALL_DROP=${{ inputs.max_recall_drop }}" >> "$GITHUB_ENV"
+            echo "MAX_F1_DROP=${{ inputs.max_f1_drop }}" >> "$GITHUB_ENV"
+            echo "MIN_SUPPORT=${{ inputs.min_support }}" >> "$GITHUB_ENV"
+            echo "MIN_RELEVANT_SUPPORT=${{ inputs.min_relevant_support }}" >> "$GITHUB_ENV"
+          else
+            echo "DATASET_PATH=docs/labeled_issues_template.txt" >> "$GITHUB_ENV"
+            echo "SPLIT=test" >> "$GITHUB_ENV"
+            echo "MAX_PRECISION_DROP=0.05" >> "$GITHUB_ENV"
+            echo "MAX_RECALL_DROP=0.05" >> "$GITHUB_ENV"
+            echo "MAX_F1_DROP=0.05" >> "$GITHUB_ENV"
+            echo "MIN_SUPPORT=30" >> "$GITHUB_ENV"
+            echo "MIN_RELEVANT_SUPPORT=10" >> "$GITHUB_ENV"
+          fi
+
+      - name: Run offline shadow evaluation (informational)
+        if: ${{ github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && inputs.enforce_gate == false) }}
+        run: |
+          python evaluate_classifier_quality.py \
+            --input "$DATASET_PATH" \
+            --split "$SPLIT" \
+            --output analysis_results/offline_shadow_quality.json
+
+      - name: Run offline shadow evaluation (quality gate)
+        if: ${{ github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.enforce_gate == true) }}
+        run: |
+          python evaluate_classifier_quality.py \
+            --input "$DATASET_PATH" \
+            --split "$SPLIT" \
+            --output analysis_results/offline_shadow_quality.json \
+            --fail-on-shadow-regression \
+            --max-precision-drop "$MAX_PRECISION_DROP" \
+            --max-recall-drop "$MAX_RECALL_DROP" \
+            --max-f1-drop "$MAX_F1_DROP" \
+            --min-support "$MIN_SUPPORT" \
+            --min-relevant-support "$MIN_RELEVANT_SUPPORT" \
+            --suggest-thresholds
+
+      - name: Upload evaluation artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: offline-shadow-quality
+          path: analysis_results/offline_shadow_quality.json
+          retention-days: 30
+          if-no-files-found: warn
+

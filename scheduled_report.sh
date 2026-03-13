@@ -1,6 +1,6 @@
 #!/bin/bash
 # Cron job script for weekly report generation
-# This script can be scheduled via crontab to run every Friday at noon
+# This script can be scheduled via crontab to run every Monday at 10:00 AM PT
 
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 cd "$SCRIPT_DIR"
@@ -80,54 +80,4 @@ else
     log "✗ Error: Report generation failed!"
     exit 1
 fi
-name: Weekly Terraform Issues Report
-
-on:
-  schedule:
-    # Run every Friday at 12:00 PM UTC (adjust timezone as needed)
-    - cron: '0 12 * * 5'
-  workflow_dispatch:  # Allow manual triggering
-
-jobs:
-  generate-report:
-    runs-on: ubuntu-latest
-
-    steps:
-    - name: Checkout repository
-      uses: actions/checkout@v4
-
-    - name: Set up Python
-      uses: actions/setup-python@v4
-      with:
-        python-version: '3.11'
-
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install -r requirements.txt
-
-    - name: Run issue analyzer
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      run: |
-        python script.py
-
-    - name: Get current date
-      id: date
-      run: echo "date=$(date +'%Y-%m-%d')" >> $GITHUB_OUTPUT
-
-    - name: Upload report as artifact
-      uses: actions/upload-artifact@v3
-      with:
-        name: terraform-issues-report-${{ steps.date.outputs.date }}
-        path: analysis_results/terraform_target_services_issues_report_en.md
-        retention-days: 90
-
-    - name: Commit and push report (optional)
-      run: |
-        git config --local user.email "github-actions[bot]@users.noreply.github.com"
-        git config --local user.name "github-actions[bot]"
-        git add analysis_results/terraform_target_services_issues_report_en.md
-        git diff --quiet && git diff --staged --quiet || (git commit -m "Weekly report update - ${{ steps.date.outputs.date }}" && git push)
-      continue-on-error: true
 

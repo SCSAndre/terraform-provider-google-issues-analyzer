@@ -18,6 +18,13 @@ import time
 from typing import Optional, List, Dict, Any
 from datetime import datetime
 from functools import lru_cache
+from tenacity import (
+    RetryError,
+    Retrying,
+    retry_if_exception,
+    stop_after_attempt,
+    wait_exponential,
+)
 
 from config import (
     GITHUB_TOKEN, TARGET_REPO, RATE_LIMIT_BUFFER,
@@ -72,6 +79,87 @@ class GitHubClient:
         self.base_url = "https://api.github.com"
         self._rate_limit_remaining: Optional[int] = None
         self._rate_limit_reset: Optional[datetime] = None
+
+    @staticmethod
+    def _is_retryable_exception(exc: BaseException) -> bool:
+        """Return True for transient exceptions that should be retried."""
+        if isinstance(exc, (AuthenticationError, RateLimitExceededError)):
+            return False
+        return isinstance(exc, (NetworkError, GitHubAPIError))
+
+    def _build_retrying(self, operation: str, page: Optional[int] = None) -> Retrying:
+        """Create a retry policy for transient API failures."""
+
+        def _before_sleep(retry_state: Any) -> None:
+            exc = retry_state.outcome.exception() if retry_state.outcome else None
+            logger.warning(
+                "%s retry %d/%d",
+                operation,
+                retry_state.attempt_number,
+                MAX_RETRIES,
+                extra={"page": page, "error": str(exc) if exc else "unknown"},
+            )
+
+        return Retrying(
+            stop=stop_after_attempt(MAX_RETRIES),
+            wait=wait_exponential(multiplier=INITIAL_BACKOFF, min=1),
+            retry=retry_if_exception(self._is_retryable_exception),
+            reraise=True,
+            before_sleep=_before_sleep,
+        )
+
+    def _fetch_issues_page_once(
+        self,
+        page: int,
+        per_page: int,
+        state: str,
+    ) -> List[Dict[str, Any]]:
+        """Single API call for one issues page."""
+        self._handle_rate_limit()
+        url = f"{self.base_url}/repos/{TARGET_REPO}/issues"
+        params = {"state": state, "per_page": per_page, "page": page}
+
+        try:
+            response = requests.get(
+                url,
+                headers=self.headers,
+                params=params,
+                timeout=30,
+            )
+        except requests.exceptions.Timeout as exc:
+            raise NetworkError("Timeout while fetching issues", original_error=exc) from exc
+        except requests.exceptions.ConnectionError as exc:
+            raise NetworkError("Connection error while fetching issues", original_error=exc) from exc
+        except requests.RequestException as exc:
+            raise NetworkError("Request error while fetching issues", original_error=exc) from exc
+
+        if response.status_code >= 400:
+            self._handle_response_error(response, f"Fetching issues page {page}")
+
+        issues = response.json()
+        logger.debug(
+            "Fetched page %d",
+            page,
+            extra={"issue_count": len(issues), "page": page},
+        )
+        return issues
+
+    def _fetch_issue_comments_once(self, comments_url: str) -> List[Dict[str, Any]]:
+        """Single API call for comments endpoint."""
+        self._handle_rate_limit()
+        try:
+            response = requests.get(comments_url, headers=self.headers, timeout=30)
+        except requests.exceptions.Timeout as exc:
+            raise NetworkError("Timeout while fetching comments", original_error=exc) from exc
+        except requests.exceptions.ConnectionError as exc:
+            raise NetworkError("Connection error while fetching comments", original_error=exc) from exc
+        except requests.RequestException as exc:
+            raise NetworkError("Request error while fetching comments", original_error=exc) from exc
+
+        if response.status_code >= 400:
+            self._handle_response_error(response, "Fetching comments")
+
+        return response.json()
 
     def _handle_rate_limit(self) -> None:
         """Check and handle GitHub API rate limits.
@@ -219,63 +307,21 @@ class GitHubClient:
             AuthenticationError: If authentication fails
             RateLimitExceededError: If rate limit is exceeded
         """
-        last_error: Optional[Exception] = None
-        
-        for attempt in range(MAX_RETRIES):
-            try:
-                self._handle_rate_limit()
-                url = f"{self.base_url}/repos/{TARGET_REPO}/issues"
-                params = {"state": state, "per_page": per_page, "page": page}
+        try:
+            retrying = self._build_retrying("Fetch issues page", page=page)
+            for attempt in retrying:
+                with attempt:
+                    return self._fetch_issues_page_once(page=page, per_page=per_page, state=state)
+        except (AuthenticationError, RateLimitExceededError):
+            raise
+        except (NetworkError, GitHubAPIError, RetryError) as e:
+            logger.error(
+                "All retry attempts failed for page %d",
+                page,
+                extra={"last_error": str(e), "page": page},
+            )
+            return None
 
-                response = requests.get(
-                    url,
-                    headers=self.headers,
-                    params=params,
-                    timeout=30
-                )
-                
-                if response.status_code >= 400:
-                    self._handle_response_error(
-                        response,
-                        f"Fetching issues page {page}"
-                    )
-                
-                issues = response.json()
-                logger.debug(
-                    f"Fetched page {page}",
-                    extra={"issue_count": len(issues), "page": page}
-                )
-                return issues
-                
-            except (AuthenticationError, RateLimitExceededError):
-                # Don't retry auth or rate limit errors
-                raise
-            except (NetworkError, GitHubAPIError) as e:
-                last_error = e
-                logger.warning(
-                    f"Fetch attempt {attempt + 1}/{MAX_RETRIES} failed",
-                    extra={
-                        "page": page,
-                        "error": str(e),
-                        "attempt": attempt + 1
-                    }
-                )
-                if attempt < MAX_RETRIES - 1:
-                    sleep_time = INITIAL_BACKOFF ** attempt
-                    time.sleep(sleep_time)
-            except requests.RequestException as e:
-                last_error = NetworkError(str(e), original_error=e)
-                logger.warning(
-                    f"Request error on attempt {attempt + 1}/{MAX_RETRIES}",
-                    extra={"page": page, "error": str(e)}
-                )
-                if attempt < MAX_RETRIES - 1:
-                    time.sleep(INITIAL_BACKOFF ** attempt)
-        
-        logger.error(
-            f"All {MAX_RETRIES} attempts failed for page {page}",
-            extra={"last_error": str(last_error)}
-        )
         return None
 
     @lru_cache(maxsize=100)
@@ -293,37 +339,20 @@ class GitHubClient:
         Returns:
             List of comment dictionaries, or None if all retries failed.
         """
-        last_error: Optional[Exception] = None
-        
-        for attempt in range(MAX_RETRIES):
-            try:
-                self._handle_rate_limit()
-                response = requests.get(
-                    comments_url,
-                    headers=self.headers,
-                    timeout=30
-                )
-                
-                if response.status_code >= 400:
-                    self._handle_response_error(
-                        response,
-                        "Fetching comments"
-                    )
-                
-                return response.json()
-                
-            except (AuthenticationError, RateLimitExceededError):
-                raise
-            except (NetworkError, GitHubAPIError, requests.RequestException) as e:
-                last_error = e
-                logger.warning(
-                    f"Comment fetch attempt {attempt + 1}/{MAX_RETRIES} failed",
-                    extra={"error": str(e)}
-                )
-                if attempt < MAX_RETRIES - 1:
-                    time.sleep(INITIAL_BACKOFF ** attempt)
-        
-        logger.error(f"Failed to fetch comments after {MAX_RETRIES} attempts")
+        try:
+            retrying = self._build_retrying("Fetch issue comments")
+            for attempt in retrying:
+                with attempt:
+                    return self._fetch_issue_comments_once(comments_url)
+        except (AuthenticationError, RateLimitExceededError):
+            raise
+        except (NetworkError, GitHubAPIError, RetryError) as e:
+            logger.error(
+                "Failed to fetch comments after retries",
+                extra={"error": str(e), "comments_url": comments_url},
+            )
+            return None
+
         return None
 
     @log_performance

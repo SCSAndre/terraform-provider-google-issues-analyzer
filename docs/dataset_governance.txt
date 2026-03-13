@@ -1,0 +1,46 @@
+Dataset Governance for Offline Classifier Evaluation
+
+Purpose
+- Keep labels consistent over time so quality metrics are trustworthy.
+- Prevent accidental drift in what is considered a Cloud Armor issue.
+
+Required Columns
+- title
+- body
+- is_relevant
+
+Recommended Columns
+- labels
+- category
+- split (train|validation|test)
+- notes (free text for reviewer rationale)
+
+Labeling Policy
+- is_relevant=true only when issue is materially about Cloud Armor behavior, resources, rules, or controls.
+- is_relevant=false for unrelated services, generic Terraform usage questions, and documentation-only noise.
+- category should be "Cloud Armor" for relevant issues in current scope.
+
+Split Conventions
+- train: used for exploratory term updates (do not use for final quality assertions).
+- validation: used during tuning and threshold decisions.
+- test: held out for release quality gate decisions.
+
+Recommended Split Ratio
+- train 60%
+- validation 20%
+- test 20%
+
+Review Process
+- At least one maintainer review for each newly labeled batch.
+- For ambiguous issues, add notes and resolve by reviewer consensus.
+- Keep historical rows immutable; append corrections with change notes in commit message.
+
+Versioning
+- Keep dataset in source control only if it does not contain sensitive internal context.
+- Tag major dataset revisions in git (for example: dataset-v1, dataset-v2).
+- Record threshold changes and dataset revisions together in release notes.
+
+Quality Gate Usage
+- Run offline evaluator on split=test in CI.
+- Use conservative fail thresholds initially, then tighten after 2-4 weeks of stable metrics.
+

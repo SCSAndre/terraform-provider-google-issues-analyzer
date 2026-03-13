@@ -1,13 +1,13 @@
 # Crontab Setup Instructions
 
-## How to Schedule Weekly Reports (Every Friday at Noon)
+## How to Schedule Weekly Reports (Every Monday at 10:00 AM PT)
 
 ### Option 1: Local Cron Job (Linux/Mac)
 
 1. **Set up environment variables** (create or edit `~/.bashrc` or `~/.bash_profile`):
 ```bash
 export GITHUB_TOKEN="your_github_personal_access_token"
-export EMAIL_RECIPIENTS="team1@company.com,team2@company.com"
+export TEAM_EMAILS="team1@company.com,team2@company.com"
 export SMTP_SERVER="smtp.gmail.com"
 export SMTP_PORT="587"
 export SMTP_USERNAME="your-email@gmail.com"
@@ -21,19 +21,19 @@ crontab -e
 
 3. **Add one of these cron schedules**:
 
-**Every Friday at 12:00 PM (noon):**
+**Every Monday at 10:00 AM PT (California time):**
 ```cron
-0 12 * * 5 /home/acardinalli/dev/terraform/issues_analyzer/scheduled_report.sh
+0 10 * * 1 /home/acardinalli/dev/terraform/issues_analyzer/scheduled_report.sh
 ```
 
-**Every Friday at 12:00 PM with email:**
+**Every Monday at 10:00 AM PT with email:**
 ```cron
-0 12 * * 5 /home/acardinalli/dev/terraform/issues_analyzer/scheduled_report.sh && /home/acardinalli/dev/terraform/issues_analyzer/email_report.sh
+0 10 * * 1 /home/acardinalli/dev/terraform/issues_analyzer/scheduled_report.sh && /home/acardinalli/dev/terraform/issues_analyzer/email_report.sh
 ```
 
 **With environment variables loaded:**
 ```cron
-0 12 * * 5 . $HOME/.bashrc; /home/acardinalli/dev/terraform/issues_analyzer/scheduled_report.sh
+0 10 * * 1 . $HOME/.bashrc; /home/acardinalli/dev/terraform/issues_analyzer/scheduled_report.sh
 ```
 
 4. **Verify cron job is scheduled**:
@@ -43,7 +43,9 @@ crontab -l
 
 ### Option 2: GitHub Actions (Recommended for Teams)
 
-This is **already set up**! Just push to GitHub and configure secrets:
+This is set up via `.github/workflows/terraform_report.yml`.
+
+Important: GitHub Actions `cron` uses UTC and does not support timezone names. The workflow uses a fixed UTC schedule, so it may drift by 1 hour during DST transitions.
 
 1. **Push the repository to GitHub**:
 ```bash
@@ -54,13 +56,12 @@ git push
 
 2. **Configure GitHub Secrets** (Settings → Secrets and variables → Actions):
    - `GITHUB_TOKEN` - Automatically available (no setup needed)
-   - `EMAIL_USERNAME` - Your SMTP username (only for email workflow)
-   - `EMAIL_PASSWORD` - Your SMTP password (only for email workflow)
-   - `EMAIL_RECIPIENTS` - Comma-separated emails (only for email workflow)
+   - `SMTP_USERNAME` - Your SMTP username
+   - `SMTP_PASSWORD` - Your SMTP password
+   - `TEAM_EMAILS` - Comma-separated recipient emails
 
-3. **Choose which workflow to enable**:
-   - `weekly_report.yml` - Generates report, saves as artifact
-   - `weekly_report_email.yml` - Generates report AND emails to team
+3. **Workflow used by this repository**:
+   - `.github/workflows/terraform_report.yml` - Generates reports and optionally sends email
 
 ### Option 3: Systemd Timer (Modern Linux)
 
@@ -81,10 +82,10 @@ ExecStart=/home/acardinalli/dev/terraform/issues_analyzer/scheduled_report.sh
 2. **Create timer file** `/etc/systemd/system/terraform-report.timer`:
 ```ini
 [Unit]
-Description=Run Terraform Issues Report Every Friday at Noon
+Description=Run Terraform Issues Report Every Monday at 10:00 AM PT
 
 [Timer]
-OnCalendar=Fri *-*-* 12:00:00
+OnCalendar=Mon *-*-* 10:00:00
 Persistent=true
 
 [Install]
@@ -106,14 +107,14 @@ sudo systemctl status terraform-report.timer
 ## Cron Schedule Examples
 
 ```
-# Every Friday at 12:00 PM
-0 12 * * 5
+# Every Monday at 10:00 AM
+0 10 * * 1
 
-# Every Friday at 9:00 AM
-0 9 * * 5
+# Every Monday at 9:00 AM
+0 9 * * 1
 
-# Every Monday at 8:00 AM
-0 8 * * 1
+# Every Monday at 10:00 AM
+0 10 * * 1
 
 # Every day at noon
 0 12 * * *
@@ -121,15 +122,17 @@ sudo systemctl status terraform-report.timer
 # Every weekday (Mon-Fri) at 10:00 AM
 0 10 * * 1-5
 
-# Twice a week: Monday and Thursday at noon
-0 12 * * 1,4
+# Twice a week: Monday and Thursday at 10:00 AM
+0 10 * * 1,4
 ```
 
 ## Timezone Considerations
 
 **GitHub Actions:** Uses UTC by default. Adjust the cron schedule accordingly.
-- 12:00 PM EST = 17:00 UTC
-- 12:00 PM PST = 20:00 UTC
+- 10:00 AM PDT = 17:00 UTC
+- 10:00 AM PST = 18:00 UTC
+
+For exact "10:00 AM America/Los_Angeles" year-round execution, prefer a timezone-aware scheduler (for example, local/system cron with PT timezone, systemd timer on a PT host, or GCP Cloud Scheduler with timezone set).
 
 **Local Cron:** Uses your system's timezone.
 
@@ -204,4 +207,8 @@ tail -f /home/acardinalli/dev/terraform/issues_analyzer/logs/report_*.log
 **Rate limiting:**
 - Set GITHUB_TOKEN environment variable
 - Check rate limit: `curl -H "Authorization: token YOUR_TOKEN" https://api.github.com/rate_limit`
+
+## Secret Backends
+
+For `SECRET_BACKEND=env|gcp` usage and GCP Secret Manager naming conventions, use the canonical guidance in `README.md`.
 

@@ -90,7 +90,7 @@ This report includes ONLY issues that are:
 ✓ Not assigned to anyone
 ✓ Not claimed in comments
 ✓ Not marked as work-in-progress
-✓ Relevant to: Load Balancers, Cloud Armor, and Private Service Connect
+✓ Relevant to: Cloud Armor
 
 Each issue includes:
 • Issue number and title
