@@ -33,6 +33,9 @@ concurrency:
   group: "pages"
   cancel-in-progress: false
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   generate-report:
     runs-on: ubuntu-latest
@@ -80,6 +83,7 @@ jobs:
         fi
 
     - name: Send email to team
+      id: send_email
       if: ${{ (inputs.send_email == true || inputs.send_email == '' || github.event_name == 'schedule') && steps.stats.outputs.report_exists == 'true' }}
       env:
         SMTP_SERVER: ${{ secrets.SMTP_SERVER }}
@@ -101,6 +105,7 @@ jobs:
         fi
         echo "📧 Sending email report to team..."
         python3 send_team_email.py
+      continue-on-error: true
 
     - name: Upload report as artifact
       if: always()
@@ -141,6 +146,7 @@ jobs:
         echo "| **Dry Run** | ${{ inputs.dry_run || 'false' }} |" >> $GITHUB_STEP_SUMMARY
         echo "| **Debug Mode** | ${{ inputs.debug_enabled || 'false' }} |" >> $GITHUB_STEP_SUMMARY
         echo "| **Send Email** | ${{ inputs.send_email || 'true' }} |" >> $GITHUB_STEP_SUMMARY
+        echo "| **Email Step Result** | ${{ steps.send_email.outcome || 'not-run' }} |" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
         if [ "${{ steps.stats.outputs.report_exists }}" == "true" ]; then
           echo "### ✅ Report Generated Successfully" >> $GITHUB_STEP_SUMMARY
