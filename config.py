@@ -26,6 +26,25 @@ from pathlib import Path
 from typing import List, Dict, Any
 
 
+def _get_bool_env(var_name: str, default: bool = False) -> bool:
+    """Parse a boolean environment variable with a safe default."""
+    value = os.getenv(var_name)
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _get_float_env(var_name: str, default: float) -> float:
+    """Parse a float environment variable with fallback to default."""
+    value = os.getenv(var_name)
+    if value is None:
+        return default
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
 # =============================================================================
 # API Configuration
 # =============================================================================
@@ -57,6 +76,12 @@ TFIDF_WEIGHT: float = 0.7
 
 #: Weight factor for regex matching scores (0.0-1.0)
 REGEX_WEIGHT: float = 0.3
+
+#: Enable trigram shadow scoring comparison without changing final decisions.
+ENABLE_TRIGRAM_SHADOW_MODE: bool = _get_bool_env("ENABLE_TRIGRAM_SHADOW_MODE", False)
+
+#: Alert/log threshold for baseline vs shadow confidence score delta.
+SHADOW_SCORE_DELTA_THRESHOLD: float = _get_float_env("SHADOW_SCORE_DELTA_THRESHOLD", 15.0)
 
 
 # =============================================================================
@@ -240,6 +265,8 @@ def get_config_summary() -> Dict[str, Any]:
         "high_confidence_threshold": HIGH_CONFIDENCE_THRESHOLD,
         "tfidf_weight": TFIDF_WEIGHT,
         "regex_weight": REGEX_WEIGHT,
+        "enable_trigram_shadow_mode": ENABLE_TRIGRAM_SHADOW_MODE,
+        "shadow_score_delta_threshold": SHADOW_SCORE_DELTA_THRESHOLD,
         "rate_limit_buffer": RATE_LIMIT_BUFFER,
         "request_delay": REQUEST_DELAY,
         "comment_threshold": COMMENT_THRESHOLD,
