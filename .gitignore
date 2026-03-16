@@ -41,3 +41,7 @@ Thumbs.db
 
 # Environment variables
 .env
+
+# Local planning artifacts
+plan-*.prompt.md
+
