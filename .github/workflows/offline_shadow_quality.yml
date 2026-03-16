@@ -45,19 +45,12 @@ on:
         type: string
         required: false
         default: "0.05"
-      min_support:
-        description: "Minimum dataset size for enforcing gate"
-        type: string
-        required: false
-        default: "30"
-      min_relevant_support:
-        description: "Minimum relevant issue count for enforcing gate"
-        type: string
-        required: false
-        default: "10"
 
 permissions:
   contents: read
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
   evaluate-shadow:
@@ -88,16 +81,12 @@ jobs:
             echo "MAX_PRECISION_DROP=${{ inputs.max_precision_drop }}" >> "$GITHUB_ENV"
             echo "MAX_RECALL_DROP=${{ inputs.max_recall_drop }}" >> "$GITHUB_ENV"
             echo "MAX_F1_DROP=${{ inputs.max_f1_drop }}" >> "$GITHUB_ENV"
-            echo "MIN_SUPPORT=${{ inputs.min_support }}" >> "$GITHUB_ENV"
-            echo "MIN_RELEVANT_SUPPORT=${{ inputs.min_relevant_support }}" >> "$GITHUB_ENV"
           else
             echo "DATASET_PATH=docs/labeled_issues_template.txt" >> "$GITHUB_ENV"
             echo "SPLIT=test" >> "$GITHUB_ENV"
             echo "MAX_PRECISION_DROP=0.05" >> "$GITHUB_ENV"
             echo "MAX_RECALL_DROP=0.05" >> "$GITHUB_ENV"
             echo "MAX_F1_DROP=0.05" >> "$GITHUB_ENV"
-            echo "MIN_SUPPORT=30" >> "$GITHUB_ENV"
-            echo "MIN_RELEVANT_SUPPORT=10" >> "$GITHUB_ENV"
           fi
 
       - name: Run offline shadow evaluation (informational)
@@ -118,10 +107,7 @@ jobs:
             --fail-on-shadow-regression \
             --max-precision-drop "$MAX_PRECISION_DROP" \
             --max-recall-drop "$MAX_RECALL_DROP" \
-            --max-f1-drop "$MAX_F1_DROP" \
-            --min-support "$MIN_SUPPORT" \
-            --min-relevant-support "$MIN_RELEVANT_SUPPORT" \
-            --suggest-thresholds
+            --max-f1-drop "$MAX_F1_DROP"
 
       - name: Upload evaluation artifact
         if: always()
