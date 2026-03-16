@@ -17,6 +17,8 @@ Use this analyzer to:
 - Repository target default: `hashicorp/terraform-provider-google`.
 - Output: `analysis_results/terraform_target_services_issues_report_en.md` and HTML report.
 
+Cloud Armor-only scope is enforced in `service_definitions.py` via `get_supported_service_categories()` and category term maps.
+
 ## How It Works
 
 1. `github_client.py` fetches open issues from GitHub (paginated with retry/rate-limit handling).
@@ -35,6 +37,20 @@ python script.py
 ```
 
 Open generated outputs in `analysis_results/`.
+
+## Local Validation
+
+```bash
+python3 -m pytest -q test_service_definitions.py
+python3 -m pytest -q test_script.py -k shadow
+```
+
+If your environment is missing optional dependencies, install both base and dev requirements first.
+
+```bash
+pip install -r requirements.txt
+pip install -r requirements-dev.txt
+```
 
 ## Configuration
 
@@ -107,7 +123,16 @@ Note: GitHub Actions cron is UTC and may shift by 1 hour in DST transitions.
 ## Testing
 
 ```bash
-python -m pytest
+python3 -m pytest
+```
+
+## GitHub Actions Smoke Runs
+
+```bash
+gh workflow run "Terraform Issues Report" -R SCSAndre/terraform-provider-google-issues-analyzer -f dry_run=true -f send_email=false -f debug_enabled=true
+gh workflow run "CI Pipeline" -R SCSAndre/terraform-provider-google-issues-analyzer
+gh workflow run "Offline Shadow Quality" -R SCSAndre/terraform-provider-google-issues-analyzer -f enforce_gate=false
+gh run list -R SCSAndre/terraform-provider-google-issues-analyzer --limit 10
 ```
 
 ## Offline Quality Evaluation (Phase 3 Step 2)

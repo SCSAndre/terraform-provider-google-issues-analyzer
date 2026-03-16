@@ -2,12 +2,18 @@
 from typing import Dict, List
 from functools import lru_cache
 
+
+SUPPORTED_SERVICE_CATEGORIES: List[str] = ["Cloud Armor"]
+
+
+def get_supported_service_categories() -> List[str]:
+    """Returns the explicitly supported service categories."""
+    return list(SUPPORTED_SERVICE_CATEGORIES)
+
 @lru_cache(maxsize=1)
 def get_service_terms() -> Dict[str, List[str]]:
     """Returns expanded search terms for supported service categories."""
-    return {
-        "Cloud Armor": _get_cloud_armor_terms(),
-    }
+    return {SUPPORTED_SERVICE_CATEGORIES[0]: _get_cloud_armor_terms()}
 
 def _get_cloud_armor_terms() -> List[str]:
     """Returns Cloud Armor related terms."""
@@ -47,7 +53,7 @@ def _get_cloud_armor_terms() -> List[str]:
 def get_critical_keywords() -> Dict[str, List[str]]:
     """Returns critical keywords for quick pre-filtering."""
     return {
-        "Cloud Armor": [
+        SUPPORTED_SERVICE_CATEGORIES[0]: [
             "cloud armor", "cloud-armor", "cloudarmor", "security policy", "security-policy",
             "waf", "web application firewall", "ddos protection", "ddos-protection",
             "edge protection", "edge-protection", "security rule", "security-rule",
