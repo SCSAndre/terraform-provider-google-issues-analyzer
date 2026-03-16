@@ -30,8 +30,7 @@ env/
 *.iml
 
 # Output files
-analysis_results/
-*.md
+/analysis_results/
 
 # OS
 .DS_Store
