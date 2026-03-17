@@ -19,9 +19,9 @@ Example:
     >>> classifier = IssueClassifier()
     >>> issues = client.fetch_all_issues()
     >>> for issue in issues:
-    ...     is_relevant, category, confidence = classifier.classify_issue(issue)
+    ...     is_relevant, category, confidence, confidence_band = classifier.classify_issue(issue)
     ...     if is_relevant:
-    ...         print(f"#{issue['number']}: {category} ({confidence}%)")
+    ...         print(f"#{issue['number']}: {category} ({confidence_band}, {confidence}%)")
 
 Modules:
     config: Configuration settings and validation

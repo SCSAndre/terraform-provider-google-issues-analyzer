@@ -8,32 +8,69 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List
 
-from config import MIN_CONFIDENCE_THRESHOLD
-
-
-def format_age(days: int) -> str:
-    """Format age in days to human-readable string."""
-    if days >= 365:
-        years = days / 365
-        return f"{years:.1f}y"
-    elif days >= 30:
-        months = days / 30
-        return f"{months:.1f}mo"
-    else:
-        return f"{days}d"
+from config import HIGH_CONFIDENCE_THRESHOLD, MEDIUM_CONFIDENCE_THRESHOLD, MIN_CONFIDENCE_THRESHOLD
+from utils import format_age
 
 
 def generate_html_report(issues: List[Dict[str, Any]], output_dir: Path) -> Path:
     """Generate an HTML report from the analyzed issues."""
     output_path = output_dir / "terraform_issues_report.html"
-    
+    history = load_history(output_dir / "history.json")
+
     # Calculate statistics
     stats = calculate_statistics(issues)
-    
+    stats["history"] = history
+
     with open(output_path, 'w', encoding='utf-8') as f:
         f.write(generate_html_content(issues, stats))
-    
+
     return output_path
+
+
+def load_history(history_path: Path) -> List[Dict[str, Any]]:
+    """Load historical run summaries for trend visualization.
+
+    Args:
+        history_path: Path to history.json.
+
+    Returns:
+        List of historical summary rows sorted in file order.
+    """
+    if not history_path.exists():
+        return []
+
+    try:
+        import json
+
+        with open(history_path, "r", encoding="utf-8") as history_file:
+            parsed = json.load(history_file)
+            if isinstance(parsed, list):
+                return [row for row in parsed if isinstance(row, dict)]
+    except (OSError, ValueError):
+        return []
+
+    return []
+
+
+def get_confidence_badge(score: float) -> str:
+    """Render a confidence score badge for issue tables.
+
+    Args:
+        score: Confidence score for an issue.
+
+    Returns:
+        HTML span element for confidence badge.
+    """
+    if score >= HIGH_CONFIDENCE_THRESHOLD:
+        css_class = "badge-confidence-high"
+        band = "HIGH"
+    elif score >= MEDIUM_CONFIDENCE_THRESHOLD:
+        css_class = "badge-confidence-review"
+        band = "REVIEW"
+    else:
+        css_class = "badge-confidence-review"
+        band = "EXCLUDED"
+    return f'<span class="badge {css_class}">{band} {score:.1f}%</span>'
 
 
 def calculate_statistics(issues: List[Dict[str, Any]]) -> Dict[str, Any]:
@@ -367,6 +404,16 @@ def get_css_styles() -> str:
             background: #f3e8ff;
             color: var(--primary-color);
         }
+
+        .badge-confidence-high {
+            background: #dcfce7;
+            color: #166534;
+        }
+
+        .badge-confidence-review {
+            background: #fef3c7;
+            color: #92400e;
+        }
         
         .priority-bar {
             width: 60px;
@@ -552,15 +599,67 @@ def generate_executive_summary_html(stats: Dict[str, Any]) -> str:
 
 def generate_charts_html(stats: Dict[str, Any]) -> str:
     """Generate the charts section."""
+    history_rows = ""
+    category_rows = ""
+    for row in stats.get("history", []):
+        history_rows += (
+            f"<tr><td>{row.get('date', '')}</td><td>{row.get('total', 0)}</td>"
+            f"<td>{row.get('high_confidence', 0)}</td><td>{row.get('review', 0)}</td></tr>"
+        )
+
+    for category, values in stats.get("categories", {}).items():
+        category_rows += (
+            f"<tr><td>{category}</td><td>{values.get('bugs', 0)}</td>"
+            f"<td>{values.get('enhancements', 0)}</td></tr>"
+        )
+
     return '''
         <div class="chart-container">
             <h3>📅 Issue Age Distribution</h3>
             <canvas id="ageChart"></canvas>
+            <noscript>
+                <table>
+                    <thead><tr><th>Range</th><th>Count</th></tr></thead>
+                    <tbody>
+                        <tr><td>&lt; 30 days</td><td>{age_0}</td></tr>
+                        <tr><td>1-3 months</td><td>{age_1}</td></tr>
+                        <tr><td>3-6 months</td><td>{age_2}</td></tr>
+                        <tr><td>6-12 months</td><td>{age_3}</td></tr>
+                        <tr><td>1-2 years</td><td>{age_4}</td></tr>
+                        <tr><td>&gt; 2 years</td><td>{age_5}</td></tr>
+                    </tbody>
+                </table>
+            </noscript>
         </div>
         <div class="chart-container">
             <h3>📁 Issues by Category</h3>
             <canvas id="categoryChart"></canvas>
-        </div>'''
+            <noscript>
+                <table>
+                    <thead><tr><th>Category</th><th>Bugs</th><th>Enhancements</th></tr></thead>
+                    <tbody>{category_rows}</tbody>
+                </table>
+            </noscript>
+        </div>
+        <div class="chart-container">
+            <h3>📈 Issue Trend</h3>
+            <canvas id="trendChart"></canvas>
+            <noscript>
+                <table>
+                    <thead><tr><th>Date</th><th>Total</th><th>High</th><th>Review</th></tr></thead>
+                    <tbody>{history_rows}</tbody>
+                </table>
+            </noscript>
+        </div>'''.format(
+        age_0=stats["age_distribution"][0],
+        age_1=stats["age_distribution"][1],
+        age_2=stats["age_distribution"][2],
+        age_3=stats["age_distribution"][3],
+        age_4=stats["age_distribution"][4],
+        age_5=stats["age_distribution"][5],
+        history_rows=history_rows,
+        category_rows=category_rows,
+    )
 
 
 def generate_quick_wins_html(issues: List[Dict[str, Any]]) -> str:
@@ -587,6 +686,7 @@ def generate_quick_wins_html(issues: List[Dict[str, Any]]) -> str:
                 <td><a href="{issue['url']}" target="_blank">#{issue['number']}</a></td>
                 <td>{title}</td>
                 <td><span class="category-badge">{issue['category']}</span></td>
+                <td>{get_confidence_badge(issue.get('confidence', 0))}</td>
                 <td>{reason_str}</td>
                 <td>{format_age(issue.get('age_days', 0))}</td>
                 <td>{type_badge}</td>
@@ -602,6 +702,7 @@ def generate_quick_wins_html(issues: List[Dict[str, Any]]) -> str:
                         <th>Issue</th>
                         <th>Title</th>
                         <th>Category</th>
+                        <th>Confidence</th>
                         <th>Reason</th>
                         <th>Age</th>
                         <th>Type</th>
@@ -629,6 +730,7 @@ def generate_attention_needed_html(issues: List[Dict[str, Any]]) -> str:
                 <td><a href="{issue['url']}" target="_blank">#{issue['number']}</a></td>
                 <td>{title}</td>
                 <td><span class="category-badge">{issue['category']}</span></td>
+                <td>{get_confidence_badge(issue.get('confidence', 0))}</td>
                 <td>{issue.get('comments', 0)}</td>
                 <td>{format_age(issue.get('days_since_update', 0))} ago</td>
                 <td>{type_badge}</td>
@@ -644,6 +746,7 @@ def generate_attention_needed_html(issues: List[Dict[str, Any]]) -> str:
                         <th>Issue</th>
                         <th>Title</th>
                         <th>Category</th>
+                        <th>Confidence</th>
                         <th>Comments</th>
                         <th>Last Update</th>
                         <th>Type</th>
@@ -683,6 +786,7 @@ def generate_top_issues_html(issues: List[Dict[str, Any]]) -> str:
                 <td><a href="{issue['url']}" target="_blank">#{issue['number']}</a></td>
                 <td>{title}</td>
                 <td><span class="category-badge">{issue['category']}</span></td>
+                <td>{get_confidence_badge(issue.get('confidence', 0))}</td>
                 <td>
                     <span class="priority-bar"><span class="priority-fill" style="width: {priority}%"></span></span>
                     {priority:.0f}
@@ -701,6 +805,7 @@ def generate_top_issues_html(issues: List[Dict[str, Any]]) -> str:
                         <th>Issue</th>
                         <th>Title</th>
                         <th>Category</th>
+                        <th>Confidence</th>
                         <th>Priority</th>
                         <th>Age</th>
                         <th>Status</th>
@@ -752,6 +857,7 @@ def generate_category_sections_html(by_category: Dict[str, List[Dict[str, Any]]]
                         <span class="priority-bar"><span class="priority-fill" style="width: {priority}%"></span></span>
                         {priority:.0f}
                     </td>
+                    <td>{get_confidence_badge(issue.get('confidence', 0))}</td>
                     <td>{format_age(issue.get('age_days', 0))}</td>
                     <td>{format_age(issue.get('days_since_update', 0))} ago {status_html}</td>
                     <td>{type_icon}</td>
@@ -767,6 +873,7 @@ def generate_category_sections_html(by_category: Dict[str, List[Dict[str, Any]]]
                             <th>Issue</th>
                             <th>Title</th>
                             <th>Priority</th>
+                            <th>Confidence</th>
                             <th>Age</th>
                             <th>Updated</th>
                             <th>Type</th>
@@ -792,12 +899,22 @@ def get_chart_scripts(stats: Dict[str, Any]) -> str:
     
     # Category data
     cat_labels = list(stats['categories'].keys())
-    cat_totals = [stats['categories'][c]['total'] for c in cat_labels]
     cat_bugs = [stats['categories'][c]['bugs'] for c in cat_labels]
     cat_enhancements = [stats['categories'][c]['enhancements'] for c in cat_labels]
+    history = stats.get('history', [])
+    trend_labels = [row.get('date', '') for row in history]
+    trend_totals = [row.get('total', 0) for row in history]
     
     return f'''
     <script>
+        if (typeof window.Chart === 'undefined') {{
+            document.querySelectorAll('canvas').forEach((canvas) => {{
+                const message = document.createElement('p');
+                message.style.color = '#92400e';
+                message.textContent = 'Chart.js unavailable; showing table fallback where provided.';
+                canvas.replaceWith(message);
+            }});
+        }} else {{
         // Age Distribution Chart
         const ageCtx = document.getElementById('ageChart').getContext('2d');
         new Chart(ageCtx, {{
@@ -875,4 +992,30 @@ def get_chart_scripts(stats: Dict[str, Any]) -> str:
                 }}
             }}
         }});
+
+        // Trend Chart
+        const trendCanvas = document.getElementById('trendChart');
+        if (trendCanvas) {{
+            const trendCtx = trendCanvas.getContext('2d');
+            new Chart(trendCtx, {{
+                type: 'line',
+                data: {{
+                    labels: {trend_labels},
+                    datasets: [{{
+                        label: 'Total Issues',
+                        data: {trend_totals},
+                        borderColor: '#7c3aed',
+                        backgroundColor: 'rgba(124, 58, 237, 0.2)',
+                        fill: true,
+                        tension: 0.2
+                    }}]
+                }},
+                options: {{
+                    responsive: true,
+                    plugins: {{ legend: {{ display: true }} }},
+                    scales: {{ y: {{ beginAtZero: true }} }}
+                }}
+            }});
+        }}
+        }}
     </script>'''

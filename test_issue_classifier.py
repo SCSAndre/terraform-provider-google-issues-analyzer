@@ -1,7 +1,7 @@
 """Comprehensive tests for Cloud Armor issue classification."""
 import unittest
 
-from issue_classifier import IssueClassifier
+from issue_classifier import IssueClassifier, classify_labels
 
 
 class TestIssueClassifierQuickKeywordCheck(unittest.TestCase):
@@ -17,10 +17,11 @@ class TestIssueClassifierQuickKeywordCheck(unittest.TestCase):
             "body": "",
             "labels": []
         }
-        is_match, category, confidence = self.classifier._quick_keyword_check(issue)
+        is_match, category, confidence, confidence_band = self.classifier._quick_keyword_check(issue)
         self.assertTrue(is_match)
         self.assertEqual(category, "Cloud Armor")
         self.assertGreaterEqual(confidence, 75.0)
+        self.assertIn(confidence_band, ["HIGH", "REVIEW"])
 
     def test_cloud_armor_in_labels(self):
         """Test detection of cloud armor in labels."""
@@ -29,7 +30,7 @@ class TestIssueClassifierQuickKeywordCheck(unittest.TestCase):
             "body": "",
             "labels": [{"name": "cloud-armor"}]
         }
-        is_match, category, confidence = self.classifier._quick_keyword_check(issue)
+        is_match, category, confidence, _ = self.classifier._quick_keyword_check(issue)
         self.assertTrue(is_match)
         self.assertEqual(category, "Cloud Armor")
         self.assertEqual(confidence, 90.0)
@@ -41,7 +42,7 @@ class TestIssueClassifierQuickKeywordCheck(unittest.TestCase):
             "body": "Adaptive protection and rate-based ban are not being enforced",
             "labels": []
         }
-        is_match, category, confidence = self.classifier._quick_keyword_check(issue)
+        is_match, category, confidence, _ = self.classifier._quick_keyword_check(issue)
         self.assertTrue(is_match)
         self.assertEqual(category, "Cloud Armor")
         self.assertEqual(confidence, 75.0)
@@ -53,7 +54,7 @@ class TestIssueClassifierQuickKeywordCheck(unittest.TestCase):
             "body": "Minor typo fixes needed",
             "labels": [{"name": "documentation"}]
         }
-        is_match, category, confidence = self.classifier._quick_keyword_check(issue)
+        is_match, category, confidence, _ = self.classifier._quick_keyword_check(issue)
         self.assertFalse(is_match)
         self.assertIsNone(category)
         self.assertEqual(confidence, 0)
@@ -65,7 +66,7 @@ class TestIssueClassifierQuickKeywordCheck(unittest.TestCase):
             "body": "",
             "labels": []
         }
-        is_match, category, confidence = self.classifier._quick_keyword_check(issue)
+        is_match, category, confidence, _ = self.classifier._quick_keyword_check(issue)
         self.assertFalse(is_match)
         self.assertIsNone(category)
         self.assertEqual(confidence, 0)
@@ -77,7 +78,7 @@ class TestIssueClassifierQuickKeywordCheck(unittest.TestCase):
             "body": None,
             "labels": []
         }
-        is_match, category, confidence = self.classifier._quick_keyword_check(issue)
+        is_match, category, confidence, _ = self.classifier._quick_keyword_check(issue)
         self.assertFalse(is_match)
         self.assertIsNone(category)
 
@@ -93,8 +94,8 @@ class TestIssueClassifierQuickKeywordCheck(unittest.TestCase):
             "body": "",
             "labels": []
         }
-        _, _, label_confidence = self.classifier._quick_keyword_check(issue_with_label)
-        _, _, title_confidence = self.classifier._quick_keyword_check(issue_with_title)
+        _, _, label_confidence, _ = self.classifier._quick_keyword_check(issue_with_label)
+        _, _, title_confidence, _ = self.classifier._quick_keyword_check(issue_with_title)
         self.assertGreater(label_confidence, title_confidence)
 
 
@@ -181,24 +182,27 @@ class TestIssueClassifierFullAnalysis(unittest.TestCase):
     def test_evaluate_scores_above_threshold(self):
         """Test score evaluation above threshold."""
         scores = {"Cloud Armor": 80.0}
-        is_relevant, category, confidence = self.classifier._evaluate_scores(scores)
+        is_relevant, category, confidence, confidence_band = self.classifier._evaluate_scores(scores)
         self.assertTrue(is_relevant)
         self.assertEqual(category, "Cloud Armor")
         self.assertEqual(confidence, 80.0)
+        self.assertEqual(confidence_band, "REVIEW")
 
     def test_evaluate_scores_below_threshold(self):
         """Test score evaluation below threshold."""
         scores = {"Cloud Armor": 10.0}
-        is_relevant, category, confidence = self.classifier._evaluate_scores(scores)
+        is_relevant, category, confidence, confidence_band = self.classifier._evaluate_scores(scores)
         self.assertFalse(is_relevant)
         self.assertIsNone(category)
+        self.assertEqual(confidence_band, "EXCLUDED")
 
     def test_evaluate_scores_empty_dict(self):
         """Test score evaluation with empty dict."""
-        is_relevant, category, confidence = self.classifier._evaluate_scores({})
+        is_relevant, category, confidence, confidence_band = self.classifier._evaluate_scores({})
         self.assertFalse(is_relevant)
         self.assertIsNone(category)
         self.assertEqual(confidence, 0)
+        self.assertEqual(confidence_band, "EXCLUDED")
 
 
 class TestIssueClassifierIntegration(unittest.TestCase):
@@ -215,9 +219,10 @@ class TestIssueClassifierIntegration(unittest.TestCase):
             "body": "Cloud Armor security policy is not blocking requests",
             "labels": [{"name": "cloud-armor"}]
         }
-        is_relevant, category, confidence = self.classifier.classify_issue(issue)
+        is_relevant, category, confidence, confidence_band = self.classifier.classify_issue(issue)
         self.assertTrue(is_relevant)
         self.assertEqual(category, "Cloud Armor")
+        self.assertEqual(confidence_band, "HIGH")
 
     def test_non_cloud_armor_issue_not_classified(self):
         """Test that non-Cloud Armor service terms are ignored."""
@@ -227,7 +232,7 @@ class TestIssueClassifierIntegration(unittest.TestCase):
             "body": "load balancer backend behavior is unexpected",
             "labels": [{"name": "service/compute"}]
         }
-        is_relevant, category, confidence = self.classifier.classify_issue(issue)
+        is_relevant, category, confidence, _ = self.classifier.classify_issue(issue)
         self.assertFalse(is_relevant)
         self.assertIsNone(category)
 
@@ -239,7 +244,7 @@ class TestIssueClassifierIntegration(unittest.TestCase):
             "body": "The documentation for creating instances is outdated",
             "labels": [{"name": "documentation"}]
         }
-        is_relevant, category, confidence = self.classifier.classify_issue(issue)
+        is_relevant, category, confidence, _ = self.classifier.classify_issue(issue)
         # May or may not be relevant depending on threshold
         if is_relevant:
             self.assertIsNotNone(category)
@@ -252,13 +257,11 @@ class TestIssueClassifierIntegration(unittest.TestCase):
             "number": None,
             "title": None,
             "body": None,
-            "labels": None
+            "labels": [],
         }
         # Should not raise exception
         try:
-            # Labels being None would cause an error, so we test with empty
-            issue["labels"] = []
-            is_relevant, category, confidence = self.classifier.classify_issue(issue)
+            is_relevant, category, confidence, _ = self.classifier.classify_issue(issue)
             self.assertIsInstance(is_relevant, bool)
         except Exception as e:
             self.fail(f"Classification raised exception: {e}")
@@ -277,7 +280,7 @@ class TestIssueClassifierEdgeCases(unittest.TestCase):
             "body": "",
             "labels": []
         }
-        is_relevant, category, confidence = self.classifier.classify_issue(issue)
+        is_relevant, category, confidence, _ = self.classifier.classify_issue(issue)
         self.assertTrue(is_relevant)
 
     def test_special_characters_in_text(self):
@@ -287,7 +290,7 @@ class TestIssueClassifierEdgeCases(unittest.TestCase):
             "body": "Test with $pecial ch@racters! & symbols",
             "labels": []
         }
-        is_relevant, category, confidence = self.classifier.classify_issue(issue)
+        is_relevant, category, confidence, _ = self.classifier.classify_issue(issue)
         self.assertTrue(is_relevant)
 
     def test_unicode_characters(self):
@@ -297,7 +300,7 @@ class TestIssueClassifierEdgeCases(unittest.TestCase):
             "body": "问题描述 with émojis 💡",
             "labels": []
         }
-        is_relevant, category, confidence = self.classifier.classify_issue(issue)
+        is_relevant, category, confidence, _ = self.classifier.classify_issue(issue)
         self.assertTrue(is_relevant)
 
     def test_single_supported_category(self):
@@ -307,7 +310,7 @@ class TestIssueClassifierEdgeCases(unittest.TestCase):
             "body": "Combining adaptive protection and managed protection",
             "labels": []
         }
-        is_relevant, category, confidence = self.classifier.classify_issue(issue)
+        is_relevant, category, confidence, _ = self.classifier.classify_issue(issue)
         self.assertTrue(is_relevant)
         self.assertEqual(category, "Cloud Armor")
 
@@ -336,7 +339,7 @@ class TestCloudArmorTermCoverage(unittest.TestCase):
                     "body": "",
                     "labels": [],
                 }
-                is_match, category, confidence = self.classifier._quick_keyword_check(issue)
+                is_match, category, confidence, _ = self.classifier._quick_keyword_check(issue)
                 self.assertTrue(is_match)
                 self.assertEqual(category, "Cloud Armor")
                 self.assertGreaterEqual(confidence, 85.0)
@@ -387,6 +390,17 @@ class TestIssueClassifierShadowMode(unittest.TestCase):
 
         self.assertGreaterEqual(comparison["shadow"]["score"], 0.0)
         self.assertFalse(comparison["shadow"]["is_relevant"])
+
+
+class TestLabelClassification(unittest.TestCase):
+    """Tests for classify_labels utility in classifier module."""
+
+    def test_classify_labels(self):
+        labels = ["bug", "good first issue", "waiting-for-pr"]
+        result = classify_labels(labels)
+        self.assertTrue(result["bug"])
+        self.assertTrue(result["good_first_issue"])
+        self.assertTrue(result["has_pr"])
 
  
 if __name__ == "__main__":

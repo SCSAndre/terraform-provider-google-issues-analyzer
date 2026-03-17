@@ -13,7 +13,6 @@ from email.mime.base import MIMEBase
 from email import encoders
 from datetime import datetime
 from pathlib import Path
-from typing import List, Dict, Any
 
 from config import (
     get_team_emails,
@@ -27,6 +26,7 @@ from config import (
 # Report configuration
 REPORT_DIR = Path(__file__).parent / "analysis_results"
 REPORT_FILE = REPORT_DIR / "terraform_target_services_issues_report_en.md"
+HTML_REPORT_FILE = REPORT_DIR / "terraform_issues_report.html"
 
 # ============================================================================
 # EMAIL SENDING LOGIC
@@ -123,7 +123,7 @@ Repository: https://github.com/hashicorp/terraform-provider-google
     return body
 
 
-def send_email(recipients, subject, body, attachment_path):
+def send_email(recipients, subject, body, attachment_path, html_body=None):
     """Sends email with attachment to all recipients."""
     
     # Validate SMTP credentials
@@ -145,8 +145,10 @@ def send_email(recipients, subject, body, attachment_path):
         msg['To'] = ', '.join(recipients)
         msg['Subject'] = subject
         
-        # Attach body
+        # Attach plain-text and optional HTML body.
         msg.attach(MIMEText(body, 'plain', 'utf-8'))
+        if html_body:
+            msg.attach(MIMEText(html_body, 'html', 'utf-8'))
         
         # Attach report file
         with open(attachment_path, 'rb') as f:
@@ -245,6 +247,9 @@ def main():
     # Create email
     subject = f"Terraform Issues Weekly Report - {datetime.now().strftime('%Y-%m-%d')}"
     body = create_email_body(summary)
+    html_body = None
+    if HTML_REPORT_FILE.exists():
+        html_body = HTML_REPORT_FILE.read_text(encoding="utf-8")
     
     # Send email
     print("=" * 70)
@@ -252,7 +257,7 @@ def main():
     print("=" * 70)
     print()
     
-    success = send_email(team_emails, subject, body, REPORT_FILE)
+    success = send_email(team_emails, subject, body, REPORT_FILE, html_body=html_body)
     
     print()
     print("=" * 70)

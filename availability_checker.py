@@ -3,7 +3,6 @@ import re
 import logging
 from typing import Dict, List, Tuple, Optional
 
-from config import COMMENT_THRESHOLD
 from github_client import GitHubClient
 
 logger = logging.getLogger(__name__)
@@ -35,6 +34,11 @@ class AvailabilityChecker:
 
         # Check comments
         is_available, reason = self._check_comments(issue)
+        if not is_available:
+            return False, reason
+
+        # Check linked pull requests from issue timeline events.
+        is_available, reason = self._check_linked_prs(issue)
         if not is_available:
             return False, reason
 
@@ -81,9 +85,25 @@ class AvailabilityChecker:
                 if re.search(pattern, comment_body):
                     return False, f"comment_indicates_commitment_by_{user}"
 
-        # Check for high activity
-        if len(comments) > COMMENT_THRESHOLD:
-            return False, f"many_discussion_{COMMENT_THRESHOLD}plus_comments"
+        return True, None
+
+    def _check_linked_prs(self, issue: Dict) -> Tuple[bool, Optional[str]]:
+        """Checks issue timeline for cross-referenced open pull requests."""
+        issue_number = issue.get("number")
+        if not issue_number:
+            return True, None
+
+        timeline = self.github_client.fetch_issue_timeline(int(issue_number))
+        if not timeline:
+            return True, None
+
+        for event in timeline:
+            if event.get("event") != "cross-referenced":
+                continue
+            source = event.get("source") or {}
+            source_issue = source.get("issue") or {}
+            if "pull_request" in source_issue and source_issue.get("state") == "open":
+                return False, "linked_open_pr"
 
         return True, None
 

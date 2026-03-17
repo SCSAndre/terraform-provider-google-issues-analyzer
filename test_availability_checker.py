@@ -1,6 +1,6 @@
 """Comprehensive tests for availability checking functionality."""
 import unittest
-from unittest.mock import Mock, patch
+from unittest.mock import Mock
 from availability_checker import AvailabilityChecker
 
 
@@ -239,7 +239,7 @@ class TestAvailabilityCheckerComments(unittest.TestCase):
         self.assertTrue(is_available)
 
     def test_issue_with_many_comments(self):
-        """Test that issues with too many comments are unavailable."""
+        """Test that many neutral comments do not mark issue unavailable."""
         issue = {
             "assignees": [],
             "labels": [],
@@ -252,8 +252,8 @@ class TestAvailabilityCheckerComments(unittest.TestCase):
             for i in range(10)
         ]
         is_available, reason = self.checker._check_comments(issue)
-        self.assertFalse(is_available)
-        self.assertIn("many_discussion", reason)
+        self.assertTrue(is_available)
+        self.assertIsNone(reason)
 
     def test_missing_comments_url(self):
         """Test handling of missing comments_url."""
@@ -297,6 +297,7 @@ class TestAvailabilityCheckerIntegration(unittest.TestCase):
             {"body": "I can reproduce this bug", "user": {"login": "user1"}},
             {"body": "Same here", "user": {"login": "user2"}}
         ]
+        self.github_client.fetch_issue_timeline.return_value = []
         is_available, reason = self.checker.is_issue_available(issue)
         self.assertTrue(is_available)
         self.assertIsNone(reason)
@@ -312,6 +313,54 @@ class TestAvailabilityCheckerIntegration(unittest.TestCase):
         self.assertFalse(is_available)
         # Should return assignee reason first
         self.assertEqual(reason, "assigned_to_assigned_user")
+
+    def test_issue_with_linked_open_pr_is_unavailable(self):
+        """Linked open pull requests should make issue unavailable."""
+        issue = {
+            "number": 101,
+            "assignees": [],
+            "labels": [{"name": "bug"}],
+            "comments": 0,
+        }
+        self.github_client.fetch_issue_timeline.return_value = [
+            {
+                "event": "cross-referenced",
+                "source": {
+                    "issue": {
+                        "state": "open",
+                        "pull_request": {"url": "https://api.github.com/repos/test/pulls/55"},
+                    }
+                },
+            }
+        ]
+
+        is_available, reason = self.checker.is_issue_available(issue)
+        self.assertFalse(is_available)
+        self.assertEqual(reason, "linked_open_pr")
+
+    def test_issue_with_linked_closed_pr_remains_available(self):
+        """Closed linked pull requests should not block issue availability."""
+        issue = {
+            "number": 102,
+            "assignees": [],
+            "labels": [{"name": "bug"}],
+            "comments": 0,
+        }
+        self.github_client.fetch_issue_timeline.return_value = [
+            {
+                "event": "cross-referenced",
+                "source": {
+                    "issue": {
+                        "state": "closed",
+                        "pull_request": {"url": "https://api.github.com/repos/test/pulls/56"},
+                    }
+                },
+            }
+        ]
+
+        is_available, reason = self.checker.is_issue_available(issue)
+        self.assertTrue(is_available)
+        self.assertIsNone(reason)
 
 
 class TestAvailabilityCheckerCommitmentPatterns(unittest.TestCase):

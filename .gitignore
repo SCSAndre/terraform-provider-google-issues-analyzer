@@ -38,6 +38,7 @@ Thumbs.db
 
 # Logs
 *.log
+.coverage
 
 # Environment variables
 .env

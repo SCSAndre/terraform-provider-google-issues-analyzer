@@ -150,7 +150,7 @@ def evaluate_baseline_vs_shadow(issues: List[LabeledIssue]) -> Dict[str, Any]:
             "labels": [{"name": value} for value in issue.labels],
         }
 
-        base_relevant, base_category, _ = classifier.classify_issue(payload)
+        base_relevant, base_category, _, _ = classifier.classify_issue(payload)
         comparison = classifier.get_shadow_score_comparison(payload)
         shadow_relevant = bool(comparison["shadow"]["is_relevant"])
         shadow_category = comparison["shadow"]["category"] if shadow_relevant else None

@@ -26,6 +26,8 @@ Example:
 """
 
 import sys
+import json
+from datetime import date
 from typing import Dict, List, Any
 
 from config import (
@@ -36,7 +38,9 @@ from config import (
 )
 from github_client import GitHubClient
 from issue_classifier import IssueClassifier
+from issue_classifier import classify_labels
 from availability_checker import AvailabilityChecker
+import report_generator
 from exceptions import (
     IssueAnalyzerError,
     ConfigurationError,
@@ -234,7 +238,13 @@ def analyze_issues(
             continue
 
         # Check relevance - get all matching categories
-        is_relevant, category, confidence, related_categories = classifier.classify_issue_with_related(issue)
+        (
+            is_relevant,
+            category,
+            confidence,
+            confidence_band,
+            related_categories,
+        ) = classifier.classify_issue_with_related(issue)
 
         # Shadow-mode comparison is logging-only and does not alter classification outcomes.
         if ENABLE_TRIGRAM_SHADOW_MODE:
@@ -298,7 +308,9 @@ def analyze_issues(
         # Calculate priority score
         priority_score = calculate_priority_score(
             confidence=confidence,
+            confidence_band=confidence_band,
             comments=issue.get("comments", 0),
+            reactions_plus_one=(issue.get("reactions") or {}).get("+1", 0),
             age_days=age_days,
             days_since_update=days_since_update,
             is_bug=label_types.get("bug", False),
@@ -313,6 +325,7 @@ def analyze_issues(
             "state": issue.get("state", "open"),
             "category": category,
             "confidence": confidence,
+            "confidence_band": confidence_band,
             "created_at": issue["created_at"],
             "updated_at": issue["updated_at"],
             "age_days": age_days,
@@ -342,32 +355,11 @@ def analyze_issues(
     return relevant_issues
 
 
-def classify_labels(labels: List[str]) -> Dict[str, bool]:
-    """Classify labels into semantic types.
-    
-    Args:
-        labels: List of label names
-        
-    Returns:
-        Dictionary with label type flags
-    """
-    labels_lower = [l.lower() for l in labels]
-    
-    return {
-        "bug": any("bug" in l for l in labels_lower),
-        "enhancement": any(l in ["enhancement", "feature", "feature-request"] for l in labels_lower),
-        "documentation": any("doc" in l for l in labels_lower),
-        "upstream": any("upstream" in l for l in labels_lower),
-        "breaking_change": any("breaking" in l for l in labels_lower),
-        "has_pr": any("pr" in l or "pull" in l for l in labels_lower),
-        "waiting": any("waiting" in l or "blocked" in l for l in labels_lower),
-        "good_first_issue": any("good first" in l or "beginner" in l for l in labels_lower),
-    }
-
-
 def calculate_priority_score(
     confidence: float,
+    confidence_band: str,
     comments: int,
+    reactions_plus_one: int,
     age_days: int,
     days_since_update: int,
     is_bug: bool,
@@ -376,10 +368,9 @@ def calculate_priority_score(
     """Calculate a priority score for issue ranking.
     
     Priority considers:
-    - Confidence (higher = more relevant)
-    - Comments (more = more interest/importance)
-    - Age (older unresolved = higher priority)
-    - Activity (recently updated = actively being worked)
+    - Confidence score and confidence band
+    - Community engagement (comments + reactions)
+    - Neglect score combining age and staleness
     - Type (bugs typically higher priority)
     - Assignment (unassigned = needs attention)
     
@@ -388,26 +379,20 @@ def calculate_priority_score(
     """
     score = 0.0
     
-    # Confidence contributes 30%
-    score += (confidence / 100) * 30
+    # Confidence contributes 40%
+    score += (confidence / 100) * 40
     
-    # Comments contribute 20% (cap at 20 comments)
+    # Comments contribute 10% (cap at 20 comments)
     comment_factor = min(comments, 20) / 20
-    score += comment_factor * 20
+    score += comment_factor * 10
+
+    # Reactions contribute 15% (cap at 30 upvotes)
+    reactions_factor = min(reactions_plus_one, 30) / 30
+    score += reactions_factor * 15
     
-    # Age contributes 15% (older issues get more priority, cap at 2 years)
-    age_factor = min(age_days, 730) / 730
-    score += age_factor * 15
-    
-    # Recent activity contributes 15% (recently active = lower priority as it's being worked)
-    # Inverse: more days since update = higher priority (neglected)
-    if days_since_update < 30:
-        activity_factor = 0.3  # Recently active, lower priority
-    elif days_since_update < 180:
-        activity_factor = 0.6  # Moderately stale
-    else:
-        activity_factor = 1.0  # Very stale, needs attention
-    score += activity_factor * 15
+    # Neglect contributes 20% (weighted blend of age and staleness, cap at 2 years)
+    neglect_days = min((age_days * 0.3) + (days_since_update * 0.7), 730)
+    score += (neglect_days / 730) * 20
     
     # Bug bonus: 10%
     if is_bug:
@@ -416,444 +401,56 @@ def calculate_priority_score(
     # Unassigned bonus: 10% (needs someone to pick it up)
     if not has_assignee:
         score += 10
+
+    # High-confidence issues get a small ranking bonus.
+    if confidence_band == "HIGH":
+        score += 5
     
     return min(score, 100)
 
 
 def generate_report(issues: List[Dict[str, Any]]) -> None:
-    """Generate comprehensive markdown report of relevant issues.
-    
-    Creates a structured markdown report with:
-    - Executive summary with key metrics
-    - Quick wins and attention needed sections
-    - Priority recommendations
-    - Age analysis
-    - Label distribution
-    - Collapsible detailed issues by category
-    
+    """Generate reports by delegating report writing to report_generator.py."""
+    report_paths = report_generator.generate_analysis_reports(issues=issues, output_dir=OUTPUT_DIR)
+    _append_history_entry(issues)
+    logger.info(
+        "Reports generated",
+        extra={
+            "markdown_path": str(report_paths["markdown"]),
+            "html_path": str(report_paths["html"]),
+            "issue_count": len(issues),
+        },
+    )
+
+
+def _append_history_entry(issues: List[Dict[str, Any]]) -> None:
+    """Append one run summary to history.json for trend rendering.
+
     Args:
-        issues: List of enriched issue dictionaries
+        issues: List of enriched issues included in the report.
     """
-    from datetime import datetime
-    
-    report_path = OUTPUT_DIR / "terraform_target_services_issues_report_en.md"
-    now = datetime.now()
+    history_path = OUTPUT_DIR / "history.json"
+    existing: List[Dict[str, Any]] = []
 
-    with open(report_path, 'w', encoding='utf-8') as f:
-        # Header
-        f.write("# Terraform Provider Google - Issues Analysis Report\n\n")
-        f.write(f"**Report Generated:** {now.strftime('%Y-%m-%d %H:%M:%S')}\n\n")
-        f.write(f"**Total Issues Analyzed:** {len(issues)}\n\n")
-        f.write(f"**Confidence Threshold:** ≥75%\n\n")
-        f.write("---\n\n")
-        
-        # Executive Summary
-        write_executive_summary(f, issues)
-        
-        # Quick Wins Section
-        write_quick_wins(f, issues)
-        
-        # Attention Needed Section
-        write_attention_needed(f, issues)
-        
-        # Priority Recommendations
-        write_priority_recommendations(f, issues)
-        
-        # Age Analysis (collapsible)
-        write_age_analysis(f, issues)
-        
-        # Label Distribution (collapsible)
-        write_label_distribution(f, issues)
-        
-        # Category Summary Table
-        write_category_summary(f, issues)
-        
-        # Detailed Issues by Category (collapsible)
-        write_issues_by_category(f, issues)
+    if history_path.exists():
+        try:
+            with open(history_path, "r", encoding="utf-8") as history_file:
+                parsed = json.load(history_file)
+                if isinstance(parsed, list):
+                    existing = parsed
+        except (OSError, ValueError) as exc:
+            logger.warning("Could not read existing history file", extra={"error": str(exc)})
 
-    logger.info(
-        "Markdown report generated",
-        extra={"path": str(report_path), "issue_count": len(issues)}
-    )
-    
-    # Generate HTML report
-    from html_report_generator import generate_html_report
-    html_path = generate_html_report(issues, OUTPUT_DIR)
-    logger.info(
-        "HTML report generated",
-        extra={"path": str(html_path), "issue_count": len(issues)}
-    )
-
-
-def format_age(days: int) -> str:
-    """Format age in days to human-readable string."""
-    if days < 30:
-        return f"{days}d"
-    elif days < 365:
-        months = days / 30
-        return f"{months:.1f}mo"
-    else:
-        years = days / 365
-        return f"{years:.1f}y"
-
-
-def write_executive_summary(f, issues: List[Dict[str, Any]]) -> None:
-    """Write executive summary section."""
-    f.write("## 📊 Executive Summary\n\n")
-    
-    # Calculate key metrics
-    total = len(issues)
-    if total == 0:
-        f.write("No issues found matching the criteria.\n\n")
-        return
-        
-    bugs = sum(1 for i in issues if i.get("label_types", {}).get("bug", False))
-    enhancements = sum(1 for i in issues if i.get("label_types", {}).get("enhancement", False))
-    assigned = sum(1 for i in issues if i.get("is_assigned", False))
-    unassigned = total - assigned
-    has_pr = sum(1 for i in issues if i.get("label_types", {}).get("has_pr", False))
-    
-    avg_age = sum(i.get("age_days", 0) for i in issues) / total
-    avg_comments = sum(i.get("comments", 0) for i in issues) / total
-    
-    stale_count = sum(1 for i in issues if i.get("days_since_update", 0) > 180)
-    active_count = sum(1 for i in issues if i.get("days_since_update", 0) < 30)
-    
-    f.write("| Metric | Value |\n")
-    f.write("|--------|-------|\n")
-    f.write(f"| Total Issues | {total} |\n")
-    f.write(f"| 🐛 Bugs | {bugs} ({bugs*100//total}%) |\n")
-    f.write(f"| ✨ Enhancements | {enhancements} ({enhancements*100//total}%) |\n")
-    f.write(f"| 👤 Assigned | {assigned} ({assigned*100//total}%) |\n")
-    f.write(f"| ⚠️ Unassigned | {unassigned} ({unassigned*100//total}%) |\n")
-    f.write(f"| 📅 Average Age | {format_age(int(avg_age))} |\n")
-    f.write(f"| 💬 Avg Comments | {avg_comments:.1f} |\n")
-    f.write(f"| 🔥 Active (<30d) | {active_count} |\n")
-    f.write(f"| 💤 Stale (>180d) | {stale_count} |\n")
-    f.write(f"| 🔗 Has PR | {has_pr} |\n")
-    f.write("\n")
-
-
-def write_quick_wins(f, issues: List[Dict[str, Any]]) -> None:
-    """Write quick wins section - easy issues to tackle."""
-    # Find issues that are small and/or have PRs
-    quick_wins = []
-    for issue in issues:
-        labels_lower = [l.lower() for l in issue.get("labels", [])]
-        is_small = any(s in l for l in labels_lower for s in ["size/xs", "size/s"])
-        has_pr = issue.get("label_types", {}).get("has_pr", False)
-        is_good_first = issue.get("label_types", {}).get("good_first_issue", False)
-        
-        if is_small or has_pr or is_good_first:
-            quick_wins.append({
-                **issue,
-                "reason": "Has PR" if has_pr else ("Good First Issue" if is_good_first else "Small Size")
-            })
-    
-    if not quick_wins:
-        return
-    
-    f.write("## 🚀 Quick Wins\n\n")
-    f.write("Issues that may be easier to resolve (small size, has PR, or good first issue).\n\n")
-    
-    # Sort by priority and take top 10
-    quick_wins = sorted(quick_wins, key=lambda x: x.get("priority_score", 0), reverse=True)[:10]
-    
-    f.write("| Issue | Category | Reason | Age | Priority |\n")
-    f.write("|-------|----------|--------|-----|----------|\n")
-    
-    for issue in quick_wins:
-        title = issue["title"][:40] + "..." if len(issue["title"]) > 40 else issue["title"]
-        f.write(f"| [#{issue['number']}]({issue['url']}) {title} | {issue['category']} | {issue['reason']} | {format_age(issue.get('age_days', 0))} | {issue.get('priority_score', 0):.0f} |\n")
-    
-    f.write("\n")
-
-
-def write_attention_needed(f, issues: List[Dict[str, Any]]) -> None:
-    """Write attention needed section - stale issues with high engagement."""
-    # Find stale issues with significant comments (community interest)
-    attention_issues = [
-        i for i in issues 
-        if i.get("days_since_update", 0) > 180 
-        and i.get("comments", 0) >= 3
-        and not i.get("is_assigned", False)
-    ]
-    
-    if not attention_issues:
-        return
-    
-    f.write("## ⚠️ Attention Needed\n\n")
-    f.write("Stale issues (>6 months) with significant community interest (3+ comments) but no assignee.\n\n")
-    
-    # Sort by comments (most interest first)
-    attention_issues = sorted(attention_issues, key=lambda x: x.get("comments", 0), reverse=True)[:10]
-    
-    f.write("| Issue | Category | Comments | Last Update | Type |\n")
-    f.write("|-------|----------|----------|-------------|------|\n")
-    
-    for issue in attention_issues:
-        title = issue["title"][:40] + "..." if len(issue["title"]) > 40 else issue["title"]
-        issue_type = "🐛" if issue.get("label_types", {}).get("bug") else "✨"
-        last_update = format_age(issue.get("days_since_update", 0))
-        f.write(f"| [#{issue['number']}]({issue['url']}) {title} | {issue['category']} | {issue.get('comments', 0)} | {last_update} ago | {issue_type} |\n")
-    
-    f.write("\n")
-
-
-def write_priority_recommendations(f, issues: List[Dict[str, Any]]) -> None:
-    """Write top priority issues section."""
-    f.write("## 🎯 Top 10 Priority Issues\n\n")
-    
-    # Sort by priority score
-    sorted_issues = sorted(issues, key=lambda x: x.get("priority_score", 0), reverse=True)
-    top_issues = sorted_issues[:10]
-    
-    f.write("| # | Issue | Category | Priority | Age | Status |\n")
-    f.write("|---|-------|----------|----------|-----|--------|\n")
-    
-    for i, issue in enumerate(top_issues, 1):
-        number = issue["number"]
-        title = issue["title"][:45] + "..." if len(issue["title"]) > 45 else issue["title"]
-        category = issue["category"]
-        priority = issue.get("priority_score", 0)
-        age = format_age(issue.get("age_days", 0))
-        
-        status_parts = []
-        if issue.get("label_types", {}).get("bug"):
-            status_parts.append("🐛")
-        if issue.get("is_assigned"):
-            status_parts.append("👤")
-        if issue.get("days_since_update", 0) > 180:
-            status_parts.append("💤")
-        elif issue.get("days_since_update", 0) < 30:
-            status_parts.append("🔥")
-        status = " ".join(status_parts) or "—"
-        
-        f.write(f"| {i} | [#{number}]({issue['url']}) {title} | {category} | {priority:.0f} | {age} | {status} |\n")
-    
-    f.write("\n")
-    f.write("**Legend:** 🐛 Bug | 👤 Assigned | 💤 Stale | 🔥 Active\n\n")
-
-
-def write_age_analysis(f, issues: List[Dict[str, Any]]) -> None:
-    """Write age distribution analysis in collapsible section."""
-    f.write("<details>\n<summary><strong>📅 Age Analysis</strong> (click to expand)</summary>\n\n")
-    
-    # Age buckets
-    buckets = {
-        "< 30 days": 0,
-        "1-3 months": 0,
-        "3-6 months": 0,
-        "6-12 months": 0,
-        "1-2 years": 0,
-        "> 2 years": 0,
+    entry = {
+        "date": date.today().isoformat(),
+        "total": len(issues),
+        "high_confidence": sum(1 for issue in issues if issue.get("confidence_band") == "HIGH"),
+        "review": sum(1 for issue in issues if issue.get("confidence_band") == "REVIEW"),
     }
-    
-    for issue in issues:
-        age = issue.get("age_days", 0)
-        if age < 30:
-            buckets["< 30 days"] += 1
-        elif age < 90:
-            buckets["1-3 months"] += 1
-        elif age < 180:
-            buckets["3-6 months"] += 1
-        elif age < 365:
-            buckets["6-12 months"] += 1
-        elif age < 730:
-            buckets["1-2 years"] += 1
-        else:
-            buckets["> 2 years"] += 1
-    
-    f.write("| Age Range | Count | Distribution |\n")
-    f.write("|-----------|-------|-------------|\n")
-    
-    total = len(issues)
-    for bucket, count in buckets.items():
-        pct = (count * 100 // total) if total else 0
-        bar = "█" * (pct // 5) + "░" * (20 - pct // 5)
-        f.write(f"| {bucket} | {count} | {bar} {pct}% |\n")
-    
-    f.write("\n")
-    
-    # Oldest issues callout
-    oldest = sorted(issues, key=lambda x: x.get("age_days", 0), reverse=True)[:5]
-    if oldest:
-        f.write("**🏚️ Oldest Open Issues:**\n\n")
-        for issue in oldest:
-            age_years = issue.get("age_days", 0) / 365
-            title = issue['title'][:50] + "..." if len(issue['title']) > 50 else issue['title']
-            f.write(f"- [#{issue['number']}]({issue['url']}) ({age_years:.1f}y) - {title}\n")
-        f.write("\n")
-    
-    f.write("</details>\n\n")
+    existing.append(entry)
 
-
-def write_label_distribution(f, issues: List[Dict[str, Any]]) -> None:
-    """Write label distribution analysis in collapsible section."""
-    f.write("<details>\n<summary><strong>🏷️ Label Distribution</strong> (click to expand)</summary>\n\n")
-    
-    # Count label types
-    label_counts = {
-        "🐛 Bug": sum(1 for i in issues if i.get("label_types", {}).get("bug")),
-        "✨ Enhancement": sum(1 for i in issues if i.get("label_types", {}).get("enhancement")),
-        "📚 Documentation": sum(1 for i in issues if i.get("label_types", {}).get("documentation")),
-        "⬆️ Upstream": sum(1 for i in issues if i.get("label_types", {}).get("upstream")),
-        "💥 Breaking Change": sum(1 for i in issues if i.get("label_types", {}).get("breaking_change")),
-        "🔗 Has PR": sum(1 for i in issues if i.get("label_types", {}).get("has_pr")),
-        "⏳ Waiting/Blocked": sum(1 for i in issues if i.get("label_types", {}).get("waiting")),
-        "👶 Good First Issue": sum(1 for i in issues if i.get("label_types", {}).get("good_first_issue")),
-    }
-    
-    f.write("| Label Type | Count |\n")
-    f.write("|------------|-------|\n")
-    for label, count in label_counts.items():
-        if count > 0:
-            f.write(f"| {label} | {count} |\n")
-    
-    f.write("\n</details>\n\n")
-
-
-def write_category_summary(f, issues: List[Dict[str, Any]]) -> None:
-    """Write category summary table."""
-    f.write("## 📁 Category Summary\n\n")
-    
-    # Group by category
-    by_category: Dict[str, List[Dict[str, Any]]] = {}
-    for issue in issues:
-        category = issue["category"]
-        if category not in by_category:
-            by_category[category] = []
-        by_category[category].append(issue)
-    
-    f.write("| Category | Issues | Bugs | Enhancements | Avg Age | Stale |\n")
-    f.write("|----------|--------|------|--------------|---------|-------|\n")
-    
-    for category in sorted(by_category.keys()):
-        cat_issues = by_category[category]
-        count = len(cat_issues)
-        bugs = sum(1 for i in cat_issues if i.get("label_types", {}).get("bug"))
-        enhancements = sum(1 for i in cat_issues if i.get("label_types", {}).get("enhancement"))
-        avg_age = sum(i.get("age_days", 0) for i in cat_issues) / count if count else 0
-        stale = sum(1 for i in cat_issues if i.get("days_since_update", 0) > 180)
-        
-        f.write(f"| {category} | {count} | {bugs} | {enhancements} | {format_age(int(avg_age))} | {stale} |\n")
-    
-    f.write("\n")
-
-
-def write_issues_by_category(f, issues: List[Dict[str, Any]]) -> None:
-    """Write detailed issues grouped by category in collapsible sections."""
-    f.write("---\n\n")
-    f.write("## 📋 Detailed Issues by Category\n\n")
-    
-    # Group by category
-    by_category: Dict[str, List[Dict[str, Any]]] = {}
-    for issue in issues:
-        category = issue["category"]
-        if category not in by_category:
-            by_category[category] = []
-        by_category[category].append(issue)
-    
-    for category in sorted(by_category.keys()):
-        cat_issues = by_category[category]
-        
-        # Collapsible category section
-        f.write(f"<details>\n<summary><strong>{category}</strong> ({len(cat_issues)} issues)</summary>\n\n")
-        
-        # Sort by priority score within category
-        sorted_issues = sorted(cat_issues, key=lambda x: x.get("priority_score", 0), reverse=True)
-        
-        # Write as a compact table
-        f.write("| Issue | Priority | Age | Updated | Type | Labels |\n")
-        f.write("|-------|----------|-----|---------|------|--------|\n")
-        
-        for issue in sorted_issues:
-            write_issue_row(f, issue)
-        
-        f.write("\n</details>\n\n")
-
-
-def write_issue_row(f, issue: Dict[str, Any]) -> None:
-    """Write a single issue as a table row."""
-    number = issue["number"]
-    title = issue["title"][:50] + "..." if len(issue["title"]) > 50 else issue["title"]
-    priority = issue.get("priority_score", 0)
-    age = format_age(issue.get("age_days", 0))
-    updated = format_age(issue.get("days_since_update", 0))
-    
-    # Type indicator
-    type_icon = ""
-    if issue.get("label_types", {}).get("bug"):
-        type_icon = "🐛"
-    elif issue.get("label_types", {}).get("enhancement"):
-        type_icon = "✨"
-    elif issue.get("label_types", {}).get("documentation"):
-        type_icon = "📚"
-    
-    # Status indicators
-    status_icons = []
-    if issue.get("is_assigned"):
-        status_icons.append("👤")
-    if issue.get("days_since_update", 0) > 180:
-        status_icons.append("💤")
-    elif issue.get("days_since_update", 0) < 30:
-        status_icons.append("🔥")
-    if issue.get("label_types", {}).get("has_pr"):
-        status_icons.append("🔗")
-    
-    # Key labels (excluding type labels)
-    key_labels = []
-    for label in issue.get("labels", [])[:3]:
-        label_lower = label.lower()
-        if not any(x in label_lower for x in ["bug", "enhancement", "documentation", "size/"]):
-            key_labels.append(label[:15])
-    labels_str = ", ".join(key_labels) if key_labels else "—"
-    
-    status_str = " ".join(status_icons) if status_icons else ""
-    
-    f.write(f"| [#{number}]({issue['url']}) {title} | {priority:.0f} | {age} | {updated} ago {status_str} | {type_icon} | {labels_str} |\n")
-
-
-def write_issue_entry(f, issue: Dict[str, Any]) -> None:
-    """Write a single issue entry with full details (legacy, kept for compatibility)."""
-    f.write(f"#### #{issue['number']}: {issue['title']}\n\n")
-    
-    # Status badges
-    badges = []
-    if issue.get("label_types", {}).get("bug"):
-        badges.append("🐛 Bug")
-    if issue.get("label_types", {}).get("enhancement"):
-        badges.append("✨ Enhancement")
-    if issue.get("is_assigned"):
-        badges.append(f"👤 Assigned: {', '.join(issue.get('assignees', []))}")
-    else:
-        badges.append("⚠️ Unassigned")
-    
-    if issue.get("days_since_update", 0) > 180:
-        badges.append("💤 Stale")
-    elif issue.get("days_since_update", 0) < 30:
-        badges.append("🔥 Active")
-    
-    if badges:
-        f.write(f"**Status:** {' | '.join(badges)}\n\n")
-    
-    # Core details
-    f.write(f"- **URL:** {issue['url']}\n")
-    f.write(f"- **Confidence:** {issue['confidence']:.1f}%\n")
-    f.write(f"- **Priority Score:** {issue.get('priority_score', 0):.0f}/100\n")
-    f.write(f"- **Created:** {issue['created_at'][:10]} ({format_age(issue.get('age_days', 0))} ago)\n")
-    f.write(f"- **Last Updated:** {issue.get('updated_at', 'N/A')[:10]} ({format_age(issue.get('days_since_update', 0))} ago)\n")
-    f.write(f"- **Comments:** {issue.get('comments', 0)}\n")
-    
-    # Labels
-    if issue.get('labels'):
-        f.write(f"- **Labels:** {', '.join(issue['labels'])}\n")
-    
-    # Related categories (cross-reference)
-    if issue.get('related_categories'):
-        f.write(f"- **Also Related To:** {', '.join(issue['related_categories'])}\n")
-    
-    f.write("\n")
+    with open(history_path, "w", encoding="utf-8") as history_file:
+        json.dump(existing, history_file, indent=2)
 
 
 if __name__ == "__main__":

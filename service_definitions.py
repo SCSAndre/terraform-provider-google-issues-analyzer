@@ -19,7 +19,7 @@ def _get_cloud_armor_terms() -> List[str]:
     """Returns Cloud Armor related terms."""
     return [
         "cloud armor", "security policy", "security rule", "web application firewall",
-        "waf", "edge protection", "ddos protection", "attack protection",
+        "waf", "ddos protection", "attack protection",
         "security edge", "edge security",
         "security policy rule", "preconfigured waf", "rate limit", "recaptcha",
         "xss protection", "sql injection", "request throttling", "security header",
@@ -43,9 +43,7 @@ def _get_cloud_armor_terms() -> List[str]:
         "enforced mode", "rate-based ban", "ban duration", "rate limit threshold",
         "exceed action", "rate limit key", "conform action", "xff header",
         "true client ip",
-        "armor", "security", "policy", "protection", "firewall",
-        "ddos", "attack", "rule", "edge protection", "application security",
-        "traffic filtering", "web security", "request limiting", "compute_security",
+        "armor", "ddos", "compute_security",
         "network_security", "security_policy", "edge_security"
     ]
 
@@ -56,7 +54,7 @@ def get_critical_keywords() -> Dict[str, List[str]]:
         SUPPORTED_SERVICE_CATEGORIES[0]: [
             "cloud armor", "cloud-armor", "cloudarmor", "security policy", "security-policy",
             "waf", "web application firewall", "ddos protection", "ddos-protection",
-            "edge protection", "edge-protection", "security rule", "security-rule",
+            "security rule", "security-rule",
             "security edge", "security-edge", "compute_security_policy",
             "rate limiting", "rate-limiting", "recaptcha", "adaptive protection", "adaptive-protection",
             "google_compute_security_policy", "google_compute_region_security_policy",

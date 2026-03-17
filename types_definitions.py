@@ -38,6 +38,7 @@ class EnrichedIssue(TypedDict, total=False):
     state: str
     category: str
     confidence: float
+    confidence_band: str
     created_at: str
     updated_at: str
     comments: int

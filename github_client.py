@@ -17,7 +17,6 @@ import requests
 import time
 from typing import Optional, List, Dict, Any
 from datetime import datetime
-from functools import lru_cache
 from tenacity import (
     RetryError,
     Retrying,
@@ -28,7 +27,7 @@ from tenacity import (
 
 from config import (
     GITHUB_TOKEN, TARGET_REPO, RATE_LIMIT_BUFFER,
-    REQUEST_DELAY, MAX_RETRIES, INITIAL_BACKOFF
+    REQUEST_DELAY, RATE_CHECK_INTERVAL, MAX_RETRIES, INITIAL_BACKOFF
 )
 from exceptions import (
     GitHubAPIError,
@@ -79,6 +78,8 @@ class GitHubClient:
         self.base_url = "https://api.github.com"
         self._rate_limit_remaining: Optional[int] = None
         self._rate_limit_reset: Optional[datetime] = None
+        self._last_rate_check: float = 0.0
+        self._comment_cache: Dict[str, List[Dict[str, Any]]] = {}
 
     @staticmethod
     def _is_retryable_exception(exc: BaseException) -> bool:
@@ -171,6 +172,11 @@ class GitHubClient:
             RateLimitExceededError: If rate limit is exhausted and cannot wait.
             NetworkError: If unable to check rate limit status.
         """
+        now_epoch = time.time()
+        if (now_epoch - self._last_rate_check) < RATE_CHECK_INTERVAL:
+            time.sleep(REQUEST_DELAY)
+            return
+
         try:
             response = requests.get(
                 f"{self.base_url}/rate_limit",
@@ -178,6 +184,7 @@ class GitHubClient:
                 timeout=30
             )
             response.raise_for_status()
+            self._last_rate_check = time.time()
 
             data = response.json()
             remaining = data['resources']['core']['remaining']
@@ -324,7 +331,6 @@ class GitHubClient:
 
         return None
 
-    @lru_cache(maxsize=100)
     def fetch_issue_comments(
         self,
         comments_url: str
@@ -339,17 +345,75 @@ class GitHubClient:
         Returns:
             List of comment dictionaries, or None if all retries failed.
         """
+        if comments_url in self._comment_cache:
+            return self._comment_cache[comments_url]
+
         try:
             retrying = self._build_retrying("Fetch issue comments")
             for attempt in retrying:
                 with attempt:
-                    return self._fetch_issue_comments_once(comments_url)
+                    comments = self._fetch_issue_comments_once(comments_url)
+                    if comments is not None:
+                        self._comment_cache[comments_url] = comments
+                    return comments
         except (AuthenticationError, RateLimitExceededError):
             raise
         except (NetworkError, GitHubAPIError, RetryError) as e:
             logger.error(
                 "Failed to fetch comments after retries",
                 extra={"error": str(e), "comments_url": comments_url},
+            )
+            return None
+
+        return None
+
+    def _fetch_issue_timeline_once(self, issue_number: int) -> List[Dict[str, Any]]:
+        """Single API call for issue timeline endpoint."""
+        self._handle_rate_limit()
+        url = f"{self.base_url}/repos/{TARGET_REPO}/issues/{issue_number}/timeline"
+        headers = {
+            **self.headers,
+            "Accept": "application/vnd.github+json",
+            "X-GitHub-Api-Version": "2022-11-28",
+        }
+
+        try:
+            response = requests.get(url, headers=headers, timeout=30)
+        except requests.exceptions.Timeout as exc:
+            raise NetworkError("Timeout while fetching issue timeline", original_error=exc) from exc
+        except requests.exceptions.ConnectionError as exc:
+            raise NetworkError("Connection error while fetching issue timeline", original_error=exc) from exc
+        except requests.RequestException as exc:
+            raise NetworkError("Request error while fetching issue timeline", original_error=exc) from exc
+
+        if response.status_code >= 400:
+            self._handle_response_error(response, f"Fetching timeline for issue {issue_number}")
+
+        timeline = response.json()
+        if isinstance(timeline, list):
+            return timeline
+        return []
+
+    def fetch_issue_timeline(self, issue_number: int) -> Optional[List[Dict[str, Any]]]:
+        """Fetch issue timeline events with retry logic.
+
+        Args:
+            issue_number: Numeric issue identifier.
+
+        Returns:
+            List of timeline events, or None if all retries fail.
+        """
+        try:
+            retrying = self._build_retrying("Fetch issue timeline")
+            for attempt in retrying:
+                with attempt:
+                    return self._fetch_issue_timeline_once(issue_number)
+        except (AuthenticationError, RateLimitExceededError):
+            raise
+        except (NetworkError, GitHubAPIError, RetryError) as e:
+            logger.error(
+                "Failed to fetch issue timeline after retries",
+                extra={"error": str(e), "issue_number": issue_number},
             )
             return None
 

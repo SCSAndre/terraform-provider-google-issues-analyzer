@@ -94,6 +94,9 @@ RATE_LIMIT_BUFFER: int = 10
 #: Delay in seconds between API requests to avoid rate limiting
 REQUEST_DELAY: float = 0.5
 
+#: Minimum interval in seconds between calls to /rate_limit endpoint.
+RATE_CHECK_INTERVAL: float = 30.0
+
 #: Maximum number of comments before considering an issue "high activity"
 COMMENT_THRESHOLD: int = 5
 

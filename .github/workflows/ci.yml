@@ -36,14 +36,11 @@ jobs:
 
     - name: Run Ruff linter (full report)
       run: |
-        # Full lint remains visible in logs while legacy style debt is addressed incrementally.
-        ruff check . --output-format=github || true
-      continue-on-error: true
+        ruff check . --output-format=github
 
     - name: Run Ruff formatter check
       run: |
-        ruff format --check . || true
-      continue-on-error: true
+        ruff format --check .
 
   type-check:
     name: Type Check
@@ -67,7 +64,6 @@ jobs:
     - name: Run MyPy type checker
       run: |
         mypy --install-types --non-interactive --ignore-missing-imports *.py
-      continue-on-error: true
 
   test:
     name: Run Tests
@@ -90,7 +86,7 @@ jobs:
 
     - name: Run tests with coverage
       run: |
-        pytest --cov=. --cov-report=xml --cov-report=term-missing -v
+        pytest --cov=. --cov-report=xml --cov-report=term-missing --cov-fail-under=70 -v
 
     - name: Upload coverage reports
       uses: codecov/codecov-action@v4

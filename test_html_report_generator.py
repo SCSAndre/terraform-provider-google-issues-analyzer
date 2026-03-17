@@ -8,7 +8,8 @@ from html_report_generator import (
     format_age,
     calculate_statistics,
     generate_html_report,
-    generate_html_content,
+    generate_charts_html,
+    get_confidence_badge,
     generate_executive_summary_html,
     generate_quick_wins_html,
     generate_attention_needed_html,
@@ -170,6 +171,33 @@ class TestGenerateHtmlReport(unittest.TestCase):
         self.assertIn('#123', content)
         self.assertIn('Test Issue', content)
         self.assertIn('Load Balancers', content)
+
+    def test_html_contains_confidence_and_trend_elements(self):
+        """Test confidence badges and trend chart are rendered."""
+        output_path = generate_html_report(self.sample_issues, Path(self.temp_dir))
+        content = output_path.read_text()
+
+        self.assertIn('Confidence', content)
+        self.assertIn('trendChart', content)
+
+
+class TestHtmlHelpers(unittest.TestCase):
+    """Test helper rendering methods."""
+
+    def test_confidence_badge_styles(self):
+        self.assertIn('badge-confidence-high', get_confidence_badge(90.0))
+        self.assertIn('badge-confidence-review', get_confidence_badge(80.0))
+
+    def test_chart_noscript_fallbacks(self):
+        stats = {
+            'age_distribution': [1, 2, 3, 4, 5, 6],
+            'categories': {'Cloud Armor': {'bugs': 1, 'enhancements': 2}},
+            'history': [{'date': '2026-03-17', 'total': 3, 'high_confidence': 1, 'review': 2}],
+        }
+        html = generate_charts_html(stats)
+        self.assertIn('<noscript>', html)
+        self.assertIn('Category', html)
+        self.assertIn('Issue Trend', html)
 
 
 class TestHtmlSections(unittest.TestCase):

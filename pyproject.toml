@@ -141,9 +141,15 @@ ignore = [
     "SIM108", # ternary operator
     "D100",   # missing docstring in public module
     "D104",   # missing docstring in public package
+    "D107",   # missing docstring in __init__
+    "D212",   # multi-line docstring summary location
     "ANN101", # missing type annotation for self
     "ANN102", # missing type annotation for cls
+    "ANN204", # missing return annotation for special methods
     "S101",   # assert detected (allowed in tests)
+    "UP006",  # keep legacy typing generics style for consistency
+    "UP045",  # keep Optional style for consistency
+    "W293",   # ignore blank-line whitespace in long embedded HTML strings
 ]
 
 # Per-file ignores

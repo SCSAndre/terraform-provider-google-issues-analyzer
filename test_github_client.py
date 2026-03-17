@@ -1,6 +1,6 @@
 """Comprehensive tests for GitHub client functionality."""
 import unittest
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import Mock, patch
 from datetime import datetime, timedelta
 import requests
 
@@ -66,6 +66,24 @@ class TestGitHubClientRateLimiting(unittest.TestCase):
         self.client._handle_rate_limit()
         # Should only sleep for REQUEST_DELAY, not rate limit wait
         mock_sleep.assert_called()
+
+    @patch('github_client.requests.get')
+    @patch('github_client.time.sleep')
+    def test_rate_limit_check_uses_ttl_cache(self, mock_sleep, mock_get):
+        """Rate-limit endpoint should be skipped inside TTL interval."""
+        mock_response = Mock()
+        mock_response.json.return_value = {
+            'resources': {'core': {'remaining': 100, 'reset': 1234567890}}
+        }
+        mock_response.raise_for_status = Mock()
+        mock_get.return_value = mock_response
+
+        self.client._handle_rate_limit()
+        first_count = mock_get.call_count
+        self.client._handle_rate_limit()
+
+        self.assertEqual(first_count, 1)
+        self.assertEqual(mock_get.call_count, 1)
 
     @patch('github_client.requests.get')
     def test_rate_limit_check_handles_error(self, mock_get):
@@ -227,8 +245,7 @@ class TestGitHubClientFetchComments(unittest.TestCase):
         with patch('github_client.GITHUB_TOKEN', 'test_token'):
             from github_client import GitHubClient
             self.client = GitHubClient()
-            # Clear the cache for each test
-            self.client.fetch_issue_comments.cache_clear()
+            self.client._comment_cache.clear()
 
     @patch('github_client.requests.get')
     def test_fetch_comments_success(self, mock_get):
@@ -337,6 +354,40 @@ class TestGitHubClientFetchAllIssues(unittest.TestCase):
             result = self.client.fetch_all_issues()
         
         self.assertEqual(len(result), 0)
+
+
+class TestGitHubClientIssueTimeline(unittest.TestCase):
+    """Tests for issue timeline fetching."""
+
+    def setUp(self):
+        with patch('github_client.GITHUB_TOKEN', 'test_token'):
+            from github_client import GitHubClient
+
+            self.client = GitHubClient()
+
+    @patch('github_client.requests.get')
+    def test_fetch_issue_timeline_success(self, mock_get):
+        """Timeline API should return list payload on success."""
+        mock_response = Mock()
+        mock_response.json.return_value = [{"event": "cross-referenced"}]
+        mock_response.status_code = 200
+        mock_get.return_value = mock_response
+
+        with patch.object(self.client, '_handle_rate_limit'):
+            timeline = self.client.fetch_issue_timeline(123)
+
+        self.assertEqual(len(timeline), 1)
+
+    @patch('github_client.requests.get')
+    @patch('github_client.time.sleep')
+    def test_fetch_issue_timeline_all_retries_fail(self, mock_sleep, mock_get):
+        """Timeline fetch should return None after retry exhaustion."""
+        mock_get.side_effect = requests.RequestException("Persistent error")
+
+        with patch.object(self.client, '_handle_rate_limit'):
+            result = self.client.fetch_issue_timeline(123)
+
+        self.assertIsNone(result)
 
     def test_fetch_all_issues_none_response(self):
         """Test handling None response (API failure)."""

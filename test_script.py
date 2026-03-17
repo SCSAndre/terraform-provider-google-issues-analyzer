@@ -288,7 +288,7 @@ class TestAnalyzeIssues(unittest.TestCase):
             },  # Issue
         ]
         
-        mock_classifier.classify_issue_with_related.return_value = (True, 'Category', 85.0, [])
+        mock_classifier.classify_issue_with_related.return_value = (True, 'Category', 85.0, 'HIGH', [])
         mock_checker.is_issue_available.return_value = (True, None)
 
         result = analyze_issues(issues, mock_classifier, mock_checker)
@@ -301,7 +301,7 @@ class TestAnalyzeIssues(unittest.TestCase):
         from script import analyze_issues
         
         mock_classifier = Mock()
-        mock_classifier.classify_issue_with_related.return_value = (False, None, 0, [])
+        mock_classifier.classify_issue_with_related.return_value = (False, None, 0, 'EXCLUDED', [])
         mock_checker = Mock()
         
         issues = [{'number': 1, 'title': 'Unrelated issue', 'created_at': '2025-01-01T00:00:00Z',
@@ -318,7 +318,7 @@ class TestAnalyzeIssues(unittest.TestCase):
         from script import analyze_issues
         
         mock_classifier = Mock()
-        mock_classifier.classify_issue_with_related.return_value = (True, 'Category', 85.0, [])
+        mock_classifier.classify_issue_with_related.return_value = (True, 'Category', 85.0, 'HIGH', [])
         mock_checker = Mock()
         mock_checker.is_issue_available.return_value = (False, 'Already assigned')
         
@@ -336,7 +336,7 @@ class TestAnalyzeIssues(unittest.TestCase):
         from script import analyze_issues
         
         mock_classifier = Mock()
-        mock_classifier.classify_issue_with_related.return_value = (True, 'Load Balancer', 92.5, ['PSC'])
+        mock_classifier.classify_issue_with_related.return_value = (True, 'Load Balancer', 92.5, 'HIGH', ['PSC'])
         mock_checker = Mock()
         mock_checker.is_issue_available.return_value = (True, None)
         
@@ -368,7 +368,7 @@ class TestAnalyzeIssues(unittest.TestCase):
         from script import analyze_issues
         
         mock_classifier = Mock()
-        mock_classifier.classify_issue_with_related.return_value = (True, 'Category', 80.0, [])
+        mock_classifier.classify_issue_with_related.return_value = (True, 'Category', 80.0, 'REVIEW', [])
         mock_checker = Mock()
         mock_checker.is_issue_available.return_value = (True, None)
         
@@ -397,10 +397,10 @@ class TestAnalyzeIssues(unittest.TestCase):
         
         # Configure mock responses
         mock_classifier.classify_issue_with_related.side_effect = [
-            (True, 'Cat1', 90.0, []),   # Relevant
-            (False, None, 0, []),       # Not relevant
-            (True, 'Cat2', 85.0, []),   # Relevant
-            (True, 'Cat1', 80.0, []),   # Relevant but not available
+            (True, 'Cat1', 90.0, 'HIGH', []),   # Relevant
+            (False, None, 0, 'EXCLUDED', []),   # Not relevant
+            (True, 'Cat2', 85.0, 'HIGH', []),   # Relevant
+            (True, 'Cat1', 80.0, 'REVIEW', []),   # Relevant but not available
         ]
         mock_checker.is_issue_available.side_effect = [
             (True, None),           # Available
@@ -426,7 +426,7 @@ class TestAnalyzeIssues(unittest.TestCase):
         from script import analyze_issues
 
         mock_classifier = Mock()
-        mock_classifier.classify_issue_with_related.return_value = (True, 'Cloud Armor', 88.0, [])
+        mock_classifier.classify_issue_with_related.return_value = (True, 'Cloud Armor', 88.0, 'HIGH', [])
         mock_checker = Mock()
         mock_checker.is_issue_available.return_value = (True, None)
 
@@ -452,7 +452,7 @@ class TestAnalyzeIssues(unittest.TestCase):
         from script import analyze_issues
 
         mock_classifier = Mock()
-        mock_classifier.classify_issue_with_related.return_value = (True, 'Cloud Armor', 88.0, [])
+        mock_classifier.classify_issue_with_related.return_value = (True, 'Cloud Armor', 88.0, 'HIGH', [])
         mock_classifier.get_shadow_score_comparison.return_value = {
             'baseline': {'category': 'Cloud Armor', 'score': 70.0, 'is_relevant': False},
             'shadow': {'category': 'Cloud Armor', 'score': 90.0, 'is_relevant': True},
@@ -568,7 +568,7 @@ class TestGenerateReport(unittest.TestCase):
         self.assertIn('Cloud Armor', content)
         self.assertIn('#1', content)
         # Now using compact table format instead of detailed entries
-        self.assertIn('| Issue | Priority | Age | Updated | Type | Labels |', content)
+        self.assertIn('| Issue | Confidence | Priority | Age | Updated | Type | Labels |', content)
 
     @patch('script.OUTPUT_DIR')
     def test_generate_report_groups_by_category(self, mock_output_dir):
@@ -637,6 +637,60 @@ class TestGenerateReport(unittest.TestCase):
         
         self.assertLess(high_pos, med_pos)
         self.assertLess(med_pos, low_pos)
+
+
+class TestPriorityScoring(unittest.TestCase):
+    """Tests for calculate_priority_score behavior."""
+
+    def test_high_confidence_gets_bonus(self):
+        from script import calculate_priority_score
+
+        high_score = calculate_priority_score(
+            confidence=90,
+            confidence_band='HIGH',
+            comments=0,
+            reactions_plus_one=0,
+            age_days=10,
+            days_since_update=10,
+            is_bug=False,
+            has_assignee=True,
+        )
+        review_score = calculate_priority_score(
+            confidence=90,
+            confidence_band='REVIEW',
+            comments=0,
+            reactions_plus_one=0,
+            age_days=10,
+            days_since_update=10,
+            is_bug=False,
+            has_assignee=True,
+        )
+        self.assertGreater(high_score, review_score)
+
+    def test_reactions_increase_priority(self):
+        from script import calculate_priority_score
+
+        no_reactions = calculate_priority_score(
+            confidence=80,
+            confidence_band='REVIEW',
+            comments=2,
+            reactions_plus_one=0,
+            age_days=100,
+            days_since_update=100,
+            is_bug=False,
+            has_assignee=False,
+        )
+        with_reactions = calculate_priority_score(
+            confidence=80,
+            confidence_band='REVIEW',
+            comments=2,
+            reactions_plus_one=30,
+            age_days=100,
+            days_since_update=100,
+            is_bug=False,
+            has_assignee=False,
+        )
+        self.assertGreater(with_reactions, no_reactions)
 
 
 class TestModuleEntryPoint(unittest.TestCase):

@@ -1,15 +1,47 @@
 """Issue classification using TF-IDF and regex matching."""
-import re
 import logging
+import re
 from typing import Dict, Tuple, Optional, List, Any
+
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
-import numpy as np
 
-from config import TFIDF_WEIGHT, REGEX_WEIGHT, MIN_CONFIDENCE_THRESHOLD, ConfidenceLevel
+from config import (
+    TFIDF_WEIGHT,
+    REGEX_WEIGHT,
+    MIN_CONFIDENCE_THRESHOLD,
+    HIGH_CONFIDENCE_THRESHOLD,
+    MEDIUM_CONFIDENCE_THRESHOLD,
+    ConfidenceLevel,
+)
 from service_definitions import get_service_terms, get_critical_keywords
 
 logger = logging.getLogger(__name__)
+
+
+def classify_labels(labels: List[str]) -> Dict[str, bool]:
+    """Classify labels into semantic types.
+
+    Args:
+        labels: List of label names.
+
+    Returns:
+        Dictionary with label type flags.
+    """
+    labels_lower = [label.lower() for label in labels]
+
+    return {
+        "bug": any("bug" in label for label in labels_lower),
+        "enhancement": any(
+            label in ["enhancement", "feature", "feature-request"] for label in labels_lower
+        ),
+        "documentation": any("doc" in label for label in labels_lower),
+        "upstream": any("upstream" in label for label in labels_lower),
+        "breaking_change": any("breaking" in label for label in labels_lower),
+        "has_pr": any("pr" in label or "pull" in label for label in labels_lower),
+        "waiting": any("waiting" in label or "blocked" in label for label in labels_lower),
+        "good_first_issue": any("good first" in label or "beginner" in label for label in labels_lower),
+    }
 
 
 class IssueClassifier:
@@ -80,7 +112,7 @@ class IssueClassifier:
             self._shadow_vectorizer = None
             self._shadow_category_vectors = None
 
-    def classify_issue(self, issue: Dict) -> Tuple[bool, Optional[str], float]:
+    def classify_issue(self, issue: Dict) -> Tuple[bool, Optional[str], float, str]:
         """
         Determines if issue is relevant to target services.
 
@@ -88,17 +120,17 @@ class IssueClassifier:
             issue: Dictionary containing issue data with 'title', 'body', 'labels'
 
         Returns:
-            Tuple of (is_relevant, service_category, confidence)
+            Tuple of (is_relevant, service_category, confidence, confidence_band)
         """
         # Quick keyword check first (most efficient)
-        is_match, category, confidence = self._quick_keyword_check(issue)
+        is_match, category, confidence, confidence_band = self._quick_keyword_check(issue)
         if is_match:
-            return True, category, confidence
+            return True, category, confidence, confidence_band
 
         # Full analysis if quick check fails
         return self._perform_full_analysis(issue)
 
-    def _quick_keyword_check(self, issue: Dict) -> Tuple[bool, Optional[str], float]:
+    def _quick_keyword_check(self, issue: Dict) -> Tuple[bool, Optional[str], float, str]:
         """Fast pre-filtering using critical keywords."""
         title = (issue.get("title") or "").lower()
         body = (issue.get("body") or "").lower()
@@ -109,21 +141,24 @@ class IssueClassifier:
             # Check labels (highest confidence)
             for keyword in keywords:
                 if keyword in label_text:
-                    return True, category, ConfidenceLevel.LABEL_MATCH
+                    score = ConfidenceLevel.LABEL_MATCH
+                    return True, category, score, self._get_confidence_band(score)
 
             # Check title (high confidence)
             for keyword in keywords:
                 if keyword in title:
-                    return True, category, ConfidenceLevel.TITLE_MATCH
+                    score = ConfidenceLevel.TITLE_MATCH
+                    return True, category, score, self._get_confidence_band(score)
 
             # Check body (medium-high confidence)
             for keyword in keywords:
                 if keyword in body:
-                    return True, category, ConfidenceLevel.BODY_MATCH
+                    score = ConfidenceLevel.BODY_MATCH
+                    return True, category, score, self._get_confidence_band(score)
 
-        return False, None, 0
+        return False, None, 0, "EXCLUDED"
 
-    def _perform_full_analysis(self, issue: Dict) -> Tuple[bool, Optional[str], float]:
+    def _perform_full_analysis(self, issue: Dict) -> Tuple[bool, Optional[str], float, str]:
         """Comprehensive TF-IDF and regex analysis."""
         issue_text = self._build_issue_text(issue)
 
@@ -268,39 +303,41 @@ class IssueClassifier:
 
         return final_scores
 
-    def _evaluate_scores(self, final_scores: Dict[str, float]) -> Tuple[bool, Optional[str], float]:
+    def _evaluate_scores(self, final_scores: Dict[str, float]) -> Tuple[bool, Optional[str], float, str]:
         """Evaluates final scores and returns classification decision."""
         if not final_scores:
-            return False, None, 0
+            return False, None, 0, "EXCLUDED"
 
         best_category, score = max(final_scores.items(), key=lambda x: x[1])
+        confidence_band = self._get_confidence_band(score)
 
         if score >= MIN_CONFIDENCE_THRESHOLD:
-            return True, best_category, score
+            return True, best_category, score, confidence_band
 
-        return False, None, 0
+        return False, None, score, confidence_band
 
     def _evaluate_scores_with_related(
         self, final_scores: Dict[str, float]
-    ) -> Tuple[bool, Optional[str], float, List[str]]:
+    ) -> Tuple[bool, Optional[str], float, str, List[str]]:
         """Evaluates final scores and returns classification with related categories.
         
         Returns:
-            Tuple of (is_relevant, primary_category, confidence, related_categories)
+            Tuple of (is_relevant, primary_category, confidence, confidence_band, related_categories)
         """
         if not final_scores:
-            return False, None, 0, []
+            return False, None, 0, "EXCLUDED", []
 
         # Sort categories by score
         sorted_categories = sorted(final_scores.items(), key=lambda x: x[1], reverse=True)
         
         if not sorted_categories:
-            return False, None, 0, []
+            return False, None, 0, "EXCLUDED", []
         
         best_category, score = sorted_categories[0]
+        confidence_band = self._get_confidence_band(score)
         
         if score < MIN_CONFIDENCE_THRESHOLD:
-            return False, None, 0, []
+            return False, None, score, confidence_band, []
         
         # Find related categories (score >= 50% of best score and >= 50 absolute)
         related_threshold = max(score * 0.5, 50)
@@ -309,11 +346,11 @@ class IssueClassifier:
             if cat_score >= related_threshold
         ]
         
-        return True, best_category, score, related_categories
+        return True, best_category, score, confidence_band, related_categories
 
     def classify_issue_with_related(
         self, issue: Dict
-    ) -> Tuple[bool, Optional[str], float, List[str]]:
+    ) -> Tuple[bool, Optional[str], float, str, List[str]]:
         """
         Determines if issue is relevant and identifies related categories.
         
@@ -324,10 +361,10 @@ class IssueClassifier:
             issue: Dictionary containing issue data with 'title', 'body', 'labels'
 
         Returns:
-            Tuple of (is_relevant, primary_category, confidence, related_categories)
+            Tuple of (is_relevant, primary_category, confidence, confidence_band, related_categories)
         """
         # Quick keyword check first (most efficient)
-        is_match, category, confidence = self._quick_keyword_check(issue)
+        is_match, category, confidence, confidence_band = self._quick_keyword_check(issue)
         if is_match:
             # For quick matches, still check for related categories
             issue_text = self._build_issue_text(issue)
@@ -341,7 +378,7 @@ class IssueClassifier:
                 cat for cat, cat_score in final_scores.items()
                 if cat != category and cat_score >= related_threshold
             ]
-            return True, category, confidence, related_categories
+            return True, category, confidence, confidence_band, related_categories
 
         # Full analysis if quick check fails
         issue_text = self._build_issue_text(issue)
@@ -350,6 +387,21 @@ class IssueClassifier:
         final_scores = self._combine_scores(tfidf_scores, regex_scores)
         
         return self._evaluate_scores_with_related(final_scores)
+
+    def _get_confidence_band(self, score: float) -> str:
+        """Get confidence band label for a numeric score.
+
+        Args:
+            score: Confidence score in range 0-100.
+
+        Returns:
+            Confidence band name: HIGH, REVIEW, or EXCLUDED.
+        """
+        if score >= HIGH_CONFIDENCE_THRESHOLD:
+            return "HIGH"
+        if score >= MEDIUM_CONFIDENCE_THRESHOLD:
+            return "REVIEW"
+        return "EXCLUDED"
 
     def get_shadow_score_comparison(self, issue: Dict[str, Any]) -> Dict[str, Any]:
         """Return baseline vs experimental scoring details without changing decisions."""
@@ -380,11 +432,13 @@ class IssueClassifier:
                 "category": baseline_category,
                 "score": float(baseline_score),
                 "is_relevant": bool(baseline_score >= MIN_CONFIDENCE_THRESHOLD),
+                "band": self._get_confidence_band(float(baseline_score)),
             },
             "shadow": {
                 "category": shadow_category,
                 "score": float(shadow_score),
                 "is_relevant": bool(shadow_score >= MIN_CONFIDENCE_THRESHOLD),
+                "band": self._get_confidence_band(float(shadow_score)),
             },
             "score_delta": float(shadow_score - baseline_score),
         }

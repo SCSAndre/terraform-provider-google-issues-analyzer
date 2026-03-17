@@ -17,6 +17,21 @@ def test_service_terms_are_cloud_armor_only() -> None:
     terms = get_service_terms()
     assert list(terms.keys()) == ["Cloud Armor"]
     assert "cloud armor" in " ".join(terms["Cloud Armor"]).lower()
+    lower_terms = {term.lower() for term in terms["Cloud Armor"]}
+    for noisy in [
+        "security",
+        "policy",
+        "protection",
+        "firewall",
+        "attack",
+        "rule",
+        "edge protection",
+        "application security",
+        "traffic filtering",
+        "web security",
+        "request limiting",
+    ]:
+        assert noisy not in lower_terms
 
 
 def test_critical_keywords_are_cloud_armor_only() -> None:
