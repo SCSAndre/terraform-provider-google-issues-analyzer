@@ -692,6 +692,92 @@ class TestPriorityScoring(unittest.TestCase):
         )
         self.assertGreater(with_reactions, no_reactions)
 
+    def test_actionable_true_adds_five_points(self):
+        """Actionable issues should receive exactly a +5 priority bonus."""
+        from script import calculate_priority_score
+
+        base_score = calculate_priority_score(
+            confidence=70,
+            confidence_band='REVIEW',
+            comments=1,
+            reactions_plus_one=2,
+            age_days=30,
+            days_since_update=20,
+            is_bug=False,
+            is_actionable=False,
+            has_assignee=True,
+        )
+        actionable_score = calculate_priority_score(
+            confidence=70,
+            confidence_band='REVIEW',
+            comments=1,
+            reactions_plus_one=2,
+            age_days=30,
+            days_since_update=20,
+            is_bug=False,
+            is_actionable=True,
+            has_assignee=True,
+        )
+
+        self.assertEqual(actionable_score - base_score, 5)
+
+    def test_actionable_default_false_adds_zero_points(self):
+        """The default actionable value should behave like False and add no bonus."""
+        from script import calculate_priority_score
+
+        default_score = calculate_priority_score(
+            confidence=65,
+            confidence_band='REVIEW',
+            comments=0,
+            reactions_plus_one=0,
+            age_days=10,
+            days_since_update=5,
+            is_bug=False,
+            has_assignee=True,
+        )
+        explicit_false_score = calculate_priority_score(
+            confidence=65,
+            confidence_band='REVIEW',
+            comments=0,
+            reactions_plus_one=0,
+            age_days=10,
+            days_since_update=5,
+            is_bug=False,
+            is_actionable=False,
+            has_assignee=True,
+        )
+
+        self.assertEqual(default_score, explicit_false_score)
+
+    def test_bug_true_adds_five_points(self):
+        """Bug label bonus should now contribute exactly +5."""
+        from script import calculate_priority_score
+
+        non_bug_score = calculate_priority_score(
+            confidence=75,
+            confidence_band='REVIEW',
+            comments=1,
+            reactions_plus_one=1,
+            age_days=40,
+            days_since_update=40,
+            is_bug=False,
+            is_actionable=False,
+            has_assignee=True,
+        )
+        bug_score = calculate_priority_score(
+            confidence=75,
+            confidence_band='REVIEW',
+            comments=1,
+            reactions_plus_one=1,
+            age_days=40,
+            days_since_update=40,
+            is_bug=True,
+            is_actionable=False,
+            has_assignee=True,
+        )
+
+        self.assertEqual(bug_score - non_bug_score, 5)
+
 
 class TestModuleEntryPoint(unittest.TestCase):
     """Tests for module entry point behavior."""

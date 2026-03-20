@@ -52,6 +52,7 @@ from logging_config import (
     log_performance,
     LogContext,
 )
+from types_definitions import IssueData
 
 # Initialize logging
 logger = get_logger(__name__)
@@ -200,7 +201,7 @@ def analyze_issues(
     issues: List[Dict[str, Any]],
     classifier: IssueClassifier,
     availability_checker: AvailabilityChecker
-) -> List[Dict[str, Any]]:
+) -> List[IssueData]:
     """Analyze issues for relevance and availability.
     
     Filters issues through the classification pipeline and availability
@@ -217,7 +218,7 @@ def analyze_issues(
     """
     from datetime import datetime
     
-    relevant_issues: List[Dict[str, Any]] = []
+    relevant_issues: List[IssueData] = []
     stats = {
         "pull_requests_skipped": 0,
         "not_relevant": 0,
@@ -301,6 +302,7 @@ def analyze_issues(
         # Extract label types
         labels = [label["name"] for label in issue.get("labels", [])]
         label_types = classify_labels(labels)
+        is_actionable = label_types.get("actionable", False)
         
         # Get assignees
         assignees = [a["login"] for a in issue.get("assignees", [])]
@@ -314,11 +316,12 @@ def analyze_issues(
             age_days=age_days,
             days_since_update=days_since_update,
             is_bug=label_types.get("bug", False),
+            is_actionable=is_actionable,
             has_assignee=len(assignees) > 0
         )
 
         # Add to results with enriched data
-        issue_data = {
+        issue_data: IssueData = {
             "number": issue["number"],
             "title": issue["title"],
             "url": issue["html_url"],
@@ -363,16 +366,31 @@ def calculate_priority_score(
     age_days: int,
     days_since_update: int,
     is_bug: bool,
-    has_assignee: bool
+    is_actionable: bool = False,
+    has_assignee: bool = False
 ) -> float:
     """Calculate a priority score for issue ranking.
-    
-    Priority considers:
-    - Confidence score and confidence band
-    - Community engagement (comments + reactions)
-    - Neglect score combining age and staleness
-    - Type (bugs typically higher priority)
-    - Assignment (unassigned = needs attention)
+
+    Weight breakdown:
+    - Confidence: 40 points max
+    - Comments: 10 points max
+    - Reactions: 15 points max
+    - Neglect (age + staleness): 20 points max
+    - Bug bonus: 5 points
+    - Actionable bonus: 5 points
+    - Unassigned bonus: 10 points
+    - High-confidence bonus: 5 points
+
+    Args:
+        confidence: Relevance confidence score from classifier.
+        confidence_band: Confidence band label (HIGH, REVIEW, EXCLUDED).
+        comments: Number of issue comments.
+        reactions_plus_one: Number of +1 reactions.
+        age_days: Days since issue creation.
+        days_since_update: Days since last issue update.
+        is_bug: True when issue has bug-like labels.
+        is_actionable: True when issue has newcomer-friendly actionable labels.
+        has_assignee: True when issue already has an assignee.
     
     Returns:
         Priority score from 0-100
@@ -394,9 +412,13 @@ def calculate_priority_score(
     neglect_days = min((age_days * 0.3) + (days_since_update * 0.7), 730)
     score += (neglect_days / 730) * 20
     
-    # Bug bonus: 10%
+    # Bug bonus: 5%
     if is_bug:
-        score += 10
+        score += 5
+
+    # Actionable bonus: 5%
+    if is_actionable:
+        score += 5
     
     # Unassigned bonus: 10% (needs someone to pick it up)
     if not has_assignee:
@@ -409,7 +431,7 @@ def calculate_priority_score(
     return min(score, 100)
 
 
-def generate_report(issues: List[Dict[str, Any]]) -> None:
+def generate_report(issues: List[IssueData]) -> None:
     """Generate reports by delegating report writing to report_generator.py."""
     report_paths = report_generator.generate_analysis_reports(issues=issues, output_dir=OUTPUT_DIR)
     _append_history_entry(issues)
@@ -423,7 +445,7 @@ def generate_report(issues: List[Dict[str, Any]]) -> None:
     )
 
 
-def _append_history_entry(issues: List[Dict[str, Any]]) -> None:
+def _append_history_entry(issues: List[IssueData]) -> None:
     """Append one run summary to history.json for trend rendering.
 
     Args:

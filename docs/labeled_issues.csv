@@ -1,0 +1,31 @@
+title,body,labels,is_relevant,category,split
+google_compute_security_policy deny rule not enforced in preview mode,After terraform apply the Cloud Armor deny rule only appears in preview mode and traffic is still allowed,cloud-armor|bug,true,Cloud Armor,train
+google_compute_security_policy_rule allow rule priority drift,Provider updates reorder allow rule priorities and Cloud Armor policy evaluates rules incorrectly,cloud-armor|enhancement,true,Cloud Armor,train
+google_compute_region_security_policy adaptive_protection block missing,Regional Cloud Armor policy enables adaptive_protection but no automatic mitigation action is created,cloud-armor|bug,true,Cloud Armor,train
+Preconfigured WAF rule OWASP CRS false positive on login path,Cloud Armor preconfigured WAF rule from OWASP CRS blocks valid auth callback requests,cloud-armor|bug,true,Cloud Armor,train
+Rate-based ban threshold ignores rate limit key xff header,Cloud Armor rate-based ban threshold does not trigger when rate limit key uses true client ip via xff header,cloud-armor|bug,true,Cloud Armor,train
+recaptcha enterprise redirect action not applied in security policy,Applying a Cloud Armor rule with recaptcha enterprise and redirect action results in no challenge,cloud-armor|enhancement,true,Cloud Armor,train
+bot management score condition unsupported in cloud armor enterprise,Cloud Armor enterprise policy rejects bot management expression when managed protection plus is enabled,cloud-armor|bug,true,Cloud Armor,validation
+Cloud Armor Edge Security Policy throttle rule not persisted,google_compute_network_edge_security_service applies but throttle rule disappears on second plan,cloud-armor|bug,true,Cloud Armor,validation
+managed protection plus not reflected in google_compute_security_policy output,State shows cloud armor enterprise enabled but managed protection plus fields stay empty,cloud-armor|enhancement,true,Cloud Armor,test
+rate limit key header match breaks deny rule update,Updating rate limit key from ip to header causes Cloud Armor deny rule validation error,cloud-armor|bug,true,Cloud Armor,test
+google_compute_firewall target_tags update forces unexpected replacement,Updating VPC firewall rule target_tags causes recreate even when API accepts in-place update,service/networking|bug,false,,train
+IAM policy binding for project member removed on second apply,google_project_iam_binding drops one member after apply and drift appears on next plan,iam|bug,false,,train
+VPC firewall rules source_ranges reordered every plan,Terraform keeps detecting diffs for vpc firewall rules due to normalized CIDR ordering,service/networking|enhancement,false,,train
+Secret Manager secret version labels ignored by provider,google_secret_manager_secret_version metadata update is not persisted after refresh,secret-manager|bug,false,,train
+Cloud KMS key ring import fails with location mismatch,Importing google_kms_key_ring returns not found when project and location are valid,kms|bug,false,,train
+binary authorization policy admission rule blocks terraform update,google_binary_authorization_policy plan fails when adding an admission whitelist pattern,binary-authorization|bug,false,,train
+VPC Service Controls access policy dry-run mode not exposed,google_access_context_manager_access_policy misses vpc service controls dry-run configuration,access-context-manager|enhancement,false,,validation
+Cloud Identity group membership role not accepted,google_cloud_identity_group_membership returns invalid role for MEMBER despite API docs,cloud-identity|bug,false,,validation
+OS Login configuration metadata conflict with project policy,Enabling OS Login via metadata fights with org policy and causes perpetual diff,compute|bug,false,,test
+Workload Identity Federation provider attribute mapping drift,google_iam_workload_identity_pool_provider reorders attribute_condition and forces update,iam|enhancement,false,,test
+BigQuery dataset access entry removed after apply,google_bigquery_dataset loses access block when dataset labels are updated,bigquery|bug,false,,train
+Cloud Storage bucket lifecycle rule age condition not saved,google_storage_bucket lifecycle_rule age value resets to zero after refresh,storage|bug,false,,train
+Pub/Sub topic message retention duration validation mismatch,Provider rejects valid pubsub topic retention string accepted by API,pubsub|bug,false,,train
+GKE node pool autoscaling min_count ignored in update,google_container_node_pool applies but autoscaling min_count remains unchanged,gke|bug,false,,train
+Cloud SQL instance maintenance window day drift,google_sql_database_instance reports maintenance_window day diff every plan,cloud-sql|enhancement,false,,train
+Cloud Run service traffic percent plan churn,google_cloud_run_service keeps swapping traffic targets despite no config changes,cloud-run|bug,false,,train
+Artifact Registry repository cleanup policy unsupported field,google_artifact_registry_repository rejects cleanup policy keep_count expression,artifact-registry|enhancement,false,,validation
+Cloud Build trigger substitutions order causes perpetual diff,google_cloudbuild_trigger substitutions map order changes each plan output,cloud-build|bug,false,,validation
+Dataflow job update mask not sent for temp_location,google_dataflow_job fails to patch temp_location and requires recreation,dataflow|bug,false,,test
+Cloud Spanner instance processing_units cannot be reduced,google_spanner_instance update returns invalid argument when decreasing processing_units,spanner|bug,false,,test

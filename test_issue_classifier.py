@@ -1,5 +1,6 @@
 """Comprehensive tests for Cloud Armor issue classification."""
 import unittest
+from unittest.mock import patch
 
 from issue_classifier import IssueClassifier, classify_labels
 
@@ -182,27 +183,30 @@ class TestIssueClassifierFullAnalysis(unittest.TestCase):
     def test_evaluate_scores_above_threshold(self):
         """Test score evaluation above threshold."""
         scores = {"Cloud Armor": 80.0}
-        is_relevant, category, confidence, confidence_band = self.classifier._evaluate_scores(scores)
+        is_relevant, category, confidence, confidence_band, related_categories = self.classifier._evaluate_scores_with_related(scores)
         self.assertTrue(is_relevant)
         self.assertEqual(category, "Cloud Armor")
         self.assertEqual(confidence, 80.0)
         self.assertEqual(confidence_band, "REVIEW")
+        self.assertEqual(related_categories, [])
 
     def test_evaluate_scores_below_threshold(self):
         """Test score evaluation below threshold."""
         scores = {"Cloud Armor": 10.0}
-        is_relevant, category, confidence, confidence_band = self.classifier._evaluate_scores(scores)
+        is_relevant, category, confidence, confidence_band, related_categories = self.classifier._evaluate_scores_with_related(scores)
         self.assertFalse(is_relevant)
         self.assertIsNone(category)
         self.assertEqual(confidence_band, "EXCLUDED")
+        self.assertEqual(related_categories, [])
 
     def test_evaluate_scores_empty_dict(self):
         """Test score evaluation with empty dict."""
-        is_relevant, category, confidence, confidence_band = self.classifier._evaluate_scores({})
+        is_relevant, category, confidence, confidence_band, related_categories = self.classifier._evaluate_scores_with_related({})
         self.assertFalse(is_relevant)
         self.assertIsNone(category)
         self.assertEqual(confidence, 0)
         self.assertEqual(confidence_band, "EXCLUDED")
+        self.assertEqual(related_categories, [])
 
 
 class TestIssueClassifierIntegration(unittest.TestCase):
@@ -223,6 +227,23 @@ class TestIssueClassifierIntegration(unittest.TestCase):
         self.assertTrue(is_relevant)
         self.assertEqual(category, "Cloud Armor")
         self.assertEqual(confidence_band, "HIGH")
+
+    def test_classify_issue_returns_four_tuple_shape(self):
+        """classify_issue should keep returning a 4-value public tuple."""
+        issue = {
+            "number": 12349,
+            "title": "Cloud Armor security policy mismatch",
+            "body": "google_compute_security_policy rule is not being applied",
+            "labels": [],
+        }
+        result = self.classifier.classify_issue(issue)
+
+        self.assertIsInstance(result, tuple)
+        self.assertEqual(len(result), 4)
+        self.assertIsInstance(result[0], bool)
+        self.assertIsInstance(result[2], float)
+        self.assertGreaterEqual(result[2], 0.0)
+        self.assertIn(result[3], ("HIGH", "REVIEW", "EXCLUDED"))
 
     def test_non_cloud_armor_issue_not_classified(self):
         """Test that non-Cloud Armor service terms are ignored."""
@@ -265,6 +286,19 @@ class TestIssueClassifierIntegration(unittest.TestCase):
             self.assertIsInstance(is_relevant, bool)
         except Exception as e:
             self.fail(f"Classification raised exception: {e}")
+
+    def test_classify_issue_with_related_fast_path_skips_tfidf(self):
+        """Quick keyword matches should return with empty related categories without TF-IDF."""
+        issue = {
+            "title": "Bug in google_compute_security_policy",
+            "body": "",
+            "labels": [],
+        }
+        with patch.object(self.classifier, "_classify_with_tfidf", side_effect=AssertionError("TF-IDF should not be called on fast path")):
+            is_relevant, _, _, _, related_categories = self.classifier.classify_issue_with_related(issue)
+
+        self.assertTrue(is_relevant)
+        self.assertEqual(related_categories, [])
 
 
 class TestIssueClassifierEdgeCases(unittest.TestCase):
@@ -396,11 +430,27 @@ class TestLabelClassification(unittest.TestCase):
     """Tests for classify_labels utility in classifier module."""
 
     def test_classify_labels(self):
+        """General label classification flags should be set correctly."""
         labels = ["bug", "good first issue", "waiting-for-pr"]
         result = classify_labels(labels)
         self.assertTrue(result["bug"])
         self.assertTrue(result["good_first_issue"])
         self.assertTrue(result["has_pr"])
+
+    def test_actionable_true_for_good_first_issue(self):
+        """good first issue labels should set actionable=True."""
+        result = classify_labels(["good first issue"])
+        self.assertTrue(result["actionable"])
+
+    def test_actionable_true_for_size_small(self):
+        """size:small labels should set actionable=True."""
+        result = classify_labels(["size:small"])
+        self.assertTrue(result["actionable"])
+
+    def test_actionable_false_for_bug_only(self):
+        """Bug-only labels should not be considered actionable."""
+        result = classify_labels(["bug"])
+        self.assertFalse(result["actionable"])
 
  
 if __name__ == "__main__":

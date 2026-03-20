@@ -80,6 +80,7 @@ class GitHubClient:
         self._rate_limit_reset: Optional[datetime] = None
         self._last_rate_check: float = 0.0
         self._comment_cache: Dict[str, List[Dict[str, Any]]] = {}
+        self._timeline_cache: Dict[int, List[Dict[str, Any]]] = {}
 
     @staticmethod
     def _is_retryable_exception(exc: BaseException) -> bool:
@@ -403,11 +404,17 @@ class GitHubClient:
         Returns:
             List of timeline events, or None if all retries fail.
         """
+        if issue_number in self._timeline_cache:
+            return self._timeline_cache[issue_number]
+
         try:
             retrying = self._build_retrying("Fetch issue timeline")
             for attempt in retrying:
                 with attempt:
-                    return self._fetch_issue_timeline_once(issue_number)
+                    result = self._fetch_issue_timeline_once(issue_number)
+                    if result is not None:
+                        self._timeline_cache[issue_number] = result
+                    return result
         except (AuthenticationError, RateLimitExceededError):
             raise
         except (NetworkError, GitHubAPIError, RetryError) as e:

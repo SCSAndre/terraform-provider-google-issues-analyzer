@@ -42,9 +42,7 @@ def _get_cloud_armor_terms() -> List[str]:
         "managed protection plus", "cloud armor enterprise", "preview mode",
         "enforced mode", "rate-based ban", "ban duration", "rate limit threshold",
         "exceed action", "rate limit key", "conform action", "xff header",
-        "true client ip",
-        "armor", "ddos", "compute_security",
-        "network_security", "security_policy", "edge_security"
+        "true client ip"
     ]
 
 @lru_cache(maxsize=1)

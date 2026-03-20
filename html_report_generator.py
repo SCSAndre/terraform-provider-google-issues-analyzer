@@ -9,10 +9,11 @@ from pathlib import Path
 from typing import Any, Dict, List
 
 from config import HIGH_CONFIDENCE_THRESHOLD, MEDIUM_CONFIDENCE_THRESHOLD, MIN_CONFIDENCE_THRESHOLD
+from types_definitions import IssueData
 from utils import format_age
 
 
-def generate_html_report(issues: List[Dict[str, Any]], output_dir: Path) -> Path:
+def generate_html_report(issues: List[IssueData], output_dir: Path) -> Path:
     """Generate an HTML report from the analyzed issues."""
     output_path = output_dir / "terraform_issues_report.html"
     history = load_history(output_dir / "history.json")
@@ -20,9 +21,10 @@ def generate_html_report(issues: List[Dict[str, Any]], output_dir: Path) -> Path
     # Calculate statistics
     stats = calculate_statistics(issues)
     stats["history"] = history
+    generic_issues: List[Dict[str, Any]] = [dict(issue) for issue in issues]
 
     with open(output_path, 'w', encoding='utf-8') as f:
-        f.write(generate_html_content(issues, stats))
+        f.write(generate_html_content(generic_issues, stats))
 
     return output_path
 
@@ -73,7 +75,7 @@ def get_confidence_badge(score: float) -> str:
     return f'<span class="badge {css_class}">{band} {score:.1f}%</span>'
 
 
-def calculate_statistics(issues: List[Dict[str, Any]]) -> Dict[str, Any]:
+def calculate_statistics(issues: List[IssueData]) -> Dict[str, Any]:
     """Calculate report statistics."""
     total = len(issues)
     if total == 0:

@@ -9,6 +9,7 @@ from typing import Any, Dict, List, TextIO
 
 from config import OUTPUT_DIR
 from html_report_generator import generate_html_report
+from types_definitions import IssueData
 from utils import format_age
 
 logger = logging.getLogger(__name__)
@@ -65,7 +66,7 @@ class ReportGenerator:
 
 
 def generate_analysis_reports(
-    issues: List[Dict[str, Any]], output_dir: Path = OUTPUT_DIR
+    issues: List[IssueData], output_dir: Path = OUTPUT_DIR
 ) -> Dict[str, Path]:
     """Generate the main markdown and HTML report artifacts.
 
@@ -85,14 +86,15 @@ def generate_analysis_reports(
         report_file.write(f"**Total Issues Analyzed:** {len(issues)}\n\n")
         report_file.write("**Confidence Threshold:** ≥75%\n\n")
         report_file.write("---\n\n")
-        write_executive_summary(report_file, issues)
-        write_quick_wins(report_file, issues)
-        write_attention_needed(report_file, issues)
-        write_priority_recommendations(report_file, issues)
-        write_age_analysis(report_file, issues)
-        write_label_distribution(report_file, issues)
-        write_category_summary(report_file, issues)
-        write_issues_by_category(report_file, issues)
+        generic_issues: List[Dict[str, Any]] = [dict(issue) for issue in issues]
+        write_executive_summary(report_file, generic_issues)
+        write_quick_wins(report_file, generic_issues)
+        write_attention_needed(report_file, generic_issues)
+        write_priority_recommendations(report_file, generic_issues)
+        write_age_analysis(report_file, generic_issues)
+        write_label_distribution(report_file, generic_issues)
+        write_category_summary(report_file, generic_issues)
+        write_issues_by_category(report_file, generic_issues)
 
     html_path = generate_html_report(issues, output_dir)
     return {"markdown": report_path, "html": html_path}

@@ -41,6 +41,13 @@ def classify_labels(labels: List[str]) -> Dict[str, bool]:
         "has_pr": any("pr" in label or "pull" in label for label in labels_lower),
         "waiting": any("waiting" in label or "blocked" in label for label in labels_lower),
         "good_first_issue": any("good first" in label or "beginner" in label for label in labels_lower),
+        "actionable": any(
+            "good first" in label or
+            "beginner" in label or
+            label == "small" or
+            "size:small" in label
+            for label in labels_lower
+        ),
     }
 
 
@@ -128,7 +135,13 @@ class IssueClassifier:
             return True, category, confidence, confidence_band
 
         # Full analysis if quick check fails
-        return self._perform_full_analysis(issue)
+        issue_text = self._build_issue_text(issue)
+        tfidf_scores = self._classify_with_tfidf(issue_text)
+        regex_scores = self._calculate_regex_scores(issue)
+        final_scores = self._combine_scores(tfidf_scores, regex_scores)
+
+        is_relevant, category, score, band, _ = self._evaluate_scores_with_related(final_scores)
+        return is_relevant, category, score, band
 
     def _quick_keyword_check(self, issue: Dict) -> Tuple[bool, Optional[str], float, str]:
         """Fast pre-filtering using critical keywords."""
@@ -175,7 +188,8 @@ class IssueClassifier:
         if issue.get("number") and issue.get("number") % 100 == 0:
             self._log_scores(issue, final_scores)
 
-        return self._evaluate_scores(final_scores)
+        is_relevant, category, score, band, _ = self._evaluate_scores_with_related(final_scores)
+        return is_relevant, category, score, band
 
     def _build_issue_text(self, issue: Dict) -> str:
         """Combines issue fields into analyzable text."""
@@ -303,18 +317,6 @@ class IssueClassifier:
 
         return final_scores
 
-    def _evaluate_scores(self, final_scores: Dict[str, float]) -> Tuple[bool, Optional[str], float, str]:
-        """Evaluates final scores and returns classification decision."""
-        if not final_scores:
-            return False, None, 0, "EXCLUDED"
-
-        best_category, score = max(final_scores.items(), key=lambda x: x[1])
-        confidence_band = self._get_confidence_band(score)
-
-        if score >= MIN_CONFIDENCE_THRESHOLD:
-            return True, best_category, score, confidence_band
-
-        return False, None, score, confidence_band
 
     def _evaluate_scores_with_related(
         self, final_scores: Dict[str, float]
@@ -362,23 +364,16 @@ class IssueClassifier:
 
         Returns:
             Tuple of (is_relevant, primary_category, confidence, confidence_band, related_categories)
+
+        Note:
+            related_categories is always empty when a quick keyword match
+            is found, since the project currently supports a single service
+            category.
         """
         # Quick keyword check first (most efficient)
         is_match, category, confidence, confidence_band = self._quick_keyword_check(issue)
         if is_match:
-            # For quick matches, still check for related categories
-            issue_text = self._build_issue_text(issue)
-            tfidf_scores = self._classify_with_tfidf(issue_text)
-            regex_scores = self._calculate_regex_scores(issue)
-            final_scores = self._combine_scores(tfidf_scores, regex_scores)
-            
-            # Remove the matched category and find related ones
-            related_threshold = max(confidence * 0.5, 50)
-            related_categories = [
-                cat for cat, cat_score in final_scores.items()
-                if cat != category and cat_score >= related_threshold
-            ]
-            return True, category, confidence, confidence_band, related_categories
+            return True, category, confidence, confidence_band, []
 
         # Full analysis if quick check fails
         issue_text = self._build_issue_text(issue)

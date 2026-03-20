@@ -46,3 +46,6 @@ Thumbs.db
 # Local planning artifacts
 plan-*.prompt.md
 
+.coder-ide/
+analysis_results/
+

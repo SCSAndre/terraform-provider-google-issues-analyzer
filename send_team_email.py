@@ -13,6 +13,7 @@ from email.mime.base import MIMEBase
 from email import encoders
 from datetime import datetime
 from pathlib import Path
+from typing import List
 
 from config import (
     get_team_emails,
@@ -22,6 +23,10 @@ from config import (
     SMTP_PASSWORD,
     EMAIL_FROM,
 )
+from logging_config import get_logger
+
+
+logger = get_logger(__name__)
 
 # Report configuration
 REPORT_DIR = Path(__file__).parent / "analysis_results"
@@ -123,8 +128,18 @@ Repository: https://github.com/hashicorp/terraform-provider-google
     return body
 
 
-def send_email(recipients, subject, body, attachment_path, html_body=None):
-    """Sends email with attachment to all recipients."""
+def send_email(recipients: List[str], subject: str, body: str, attachment_path: Path) -> bool:
+    """Send report email with plain-text fallback, optional HTML body, and markdown attachment.
+
+    Args:
+        recipients: Email recipients.
+        subject: Email subject line.
+        body: Plain-text fallback body.
+        attachment_path: Markdown report path to attach.
+
+    Returns:
+        True when email is sent successfully, otherwise False.
+    """
     
     # Validate SMTP credentials
     if not SMTP_USERNAME or not SMTP_PASSWORD:
@@ -139,16 +154,27 @@ def send_email(recipients, subject, body, attachment_path, html_body=None):
         return False
     
     try:
-        # Create message
+        # Create top-level message and multipart/alternative body container.
         msg = MIMEMultipart()
         msg['From'] = EMAIL_FROM
         msg['To'] = ', '.join(recipients)
         msg['Subject'] = subject
-        
-        # Attach plain-text and optional HTML body.
-        msg.attach(MIMEText(body, 'plain', 'utf-8'))
-        if html_body:
-            msg.attach(MIMEText(html_body, 'html', 'utf-8'))
+
+        body_container = MIMEMultipart("alternative")
+        body_container.attach(MIMEText(body, 'plain', 'utf-8'))
+
+        try:
+            html_content = HTML_REPORT_FILE.read_text(encoding='utf-8')
+            body_container.attach(MIMEText(html_content, 'html', 'utf-8'))
+        except FileNotFoundError:
+            logger.warning("HTML report not found. Sending plain-text-only body.", extra={"path": str(HTML_REPORT_FILE)})
+        except OSError as exc:
+            logger.warning(
+                "Could not read HTML report. Sending plain-text-only body.",
+                extra={"path": str(HTML_REPORT_FILE), "error": str(exc)},
+            )
+
+        msg.attach(body_container)
         
         # Attach report file
         with open(attachment_path, 'rb') as f:
@@ -193,13 +219,13 @@ def send_email(recipients, subject, body, attachment_path, html_body=None):
         print("  3. Use the 16-character app password")
         return False
         
-    except Exception as e:
+    except (smtplib.SMTPException, OSError) as e:
         print(f"❌ ERROR: Failed to send email: {e}")
         return False
 
 
-def main():
-    """Main execution function."""
+def main() -> None:
+    """Run email distribution workflow for the weekly report."""
     print("=" * 70)
     print("  TERRAFORM ISSUES ANALYZER - EMAIL DISTRIBUTION")
     print("=" * 70)
@@ -215,6 +241,10 @@ def main():
         sys.exit(1)
     
     print(f"✓ Report found: {REPORT_FILE}")
+    if HTML_REPORT_FILE.exists():
+        logger.info("HTML report found", extra={"path": str(HTML_REPORT_FILE)})
+    else:
+        logger.warning("HTML report not found", extra={"path": str(HTML_REPORT_FILE)})
     print()
     
     # Get team emails from config (environment variable)
@@ -247,9 +277,6 @@ def main():
     # Create email
     subject = f"Terraform Issues Weekly Report - {datetime.now().strftime('%Y-%m-%d')}"
     body = create_email_body(summary)
-    html_body = None
-    if HTML_REPORT_FILE.exists():
-        html_body = HTML_REPORT_FILE.read_text(encoding="utf-8")
     
     # Send email
     print("=" * 70)
@@ -257,7 +284,7 @@ def main():
     print("=" * 70)
     print()
     
-    success = send_email(team_emails, subject, body, REPORT_FILE, html_body=html_body)
+    success = send_email(team_emails, subject, body, REPORT_FILE)
     
     print()
     print("=" * 70)

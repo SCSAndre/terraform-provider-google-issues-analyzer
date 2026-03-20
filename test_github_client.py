@@ -389,6 +389,21 @@ class TestGitHubClientIssueTimeline(unittest.TestCase):
 
         self.assertIsNone(result)
 
+    @patch('github_client.requests.get')
+    def test_fetch_issue_timeline_caching(self, mock_get):
+        """Timeline requests should be served from cache after first fetch."""
+        mock_response = Mock()
+        mock_response.json.return_value = [{"event": "assigned"}]
+        mock_response.status_code = 200
+        mock_get.return_value = mock_response
+
+        with patch.object(self.client, '_handle_rate_limit'):
+            first = self.client.fetch_issue_timeline(42)
+            second = self.client.fetch_issue_timeline(42)
+
+        self.assertEqual(first, second)
+        self.assertEqual(mock_get.call_count, 1)
+
     def test_fetch_all_issues_none_response(self):
         """Test handling None response (API failure)."""
         with patch.object(self.client, 'fetch_issues_page') as mock_fetch:

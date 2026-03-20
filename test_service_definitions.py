@@ -40,3 +40,18 @@ def test_critical_keywords_are_cloud_armor_only() -> None:
     assert list(keywords.keys()) == ["Cloud Armor"]
     assert "cloud armor" in " ".join(keywords["Cloud Armor"]).lower()
 
+
+def test_no_noisy_generic_terms() -> None:
+    """Removed generic noisy terms must not appear in service terms."""
+    terms = get_service_terms()
+    noisy = {
+        "armor", "ddos", "compute_security",
+        "network_security", "security_policy", "edge_security"
+    }
+    for category_terms in terms.values():
+        for noisy_term in noisy:
+            assert noisy_term not in category_terms, (
+                f"Noisy term '{noisy_term}' should not be in service terms"
+            )
+
+
