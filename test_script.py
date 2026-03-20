@@ -746,7 +746,7 @@ class TestPriorityScoring(unittest.TestCase):
             has_assignee=True,
         )
 
-        self.assertEqual(actionable_score - base_score, 5)
+        self.assertAlmostEqual(actionable_score - base_score, 5.0, places=7)
 
     def test_actionable_default_false_adds_zero_points(self):
         """The default actionable value should behave like False and add no bonus."""
@@ -803,7 +803,7 @@ class TestPriorityScoring(unittest.TestCase):
             has_assignee=True,
         )
 
-        self.assertEqual(bug_score - non_bug_score, 5)
+        self.assertAlmostEqual(bug_score - non_bug_score, 5.0, places=7)
 
 
 class TestModuleEntryPoint(unittest.TestCase):
