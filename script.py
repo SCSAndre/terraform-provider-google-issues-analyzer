@@ -338,6 +338,7 @@ def analyze_issues(
             "label_types": label_types,
             "assignees": assignees,
             "is_assigned": len(assignees) > 0,
+            "actionable": is_actionable,
             "related_categories": related_categories,
             "priority_score": priority_score,
         }

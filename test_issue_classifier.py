@@ -228,6 +228,17 @@ class TestIssueClassifierIntegration(unittest.TestCase):
         self.assertEqual(category, "Cloud Armor")
         self.assertEqual(confidence_band, "HIGH")
 
+    def test_classify_issue_cloud_armor_keyword_end_to_end(self):
+        """Cloud Armor keyword should remain relevant after cleanup."""
+        issue = {
+            "number": 12350,
+            "title": "google_compute_security_policy update failure",
+            "body": "Terraform apply fails on Cloud Armor security policy",
+            "labels": [],
+        }
+        is_relevant, _, _, _ = self.classifier.classify_issue(issue)
+        self.assertTrue(is_relevant)
+
     def test_classify_issue_returns_four_tuple_shape(self):
         """classify_issue should keep returning a 4-value public tuple."""
         issue = {

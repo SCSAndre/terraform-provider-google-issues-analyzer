@@ -171,25 +171,6 @@ class IssueClassifier:
 
         return False, None, 0, "EXCLUDED"
 
-    def _perform_full_analysis(self, issue: Dict) -> Tuple[bool, Optional[str], float, str]:
-        """Comprehensive TF-IDF and regex analysis."""
-        issue_text = self._build_issue_text(issue)
-
-        # TF-IDF classification
-        tfidf_scores = self._classify_with_tfidf(issue_text)
-
-        # Regex-based scoring
-        regex_scores = self._calculate_regex_scores(issue)
-
-        # Combine scores
-        final_scores = self._combine_scores(tfidf_scores, regex_scores)
-
-        # Log for debugging
-        if issue.get("number") and issue.get("number") % 100 == 0:
-            self._log_scores(issue, final_scores)
-
-        is_relevant, category, score, band, _ = self._evaluate_scores_with_related(final_scores)
-        return is_relevant, category, score, band
 
     def _build_issue_text(self, issue: Dict) -> str:
         """Combines issue fields into analyzable text."""

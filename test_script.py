@@ -479,6 +479,33 @@ class TestAnalyzeIssues(unittest.TestCase):
 
         mock_classifier.get_shadow_score_comparison.assert_called_once()
 
+    def test_analyze_sets_top_level_actionable_key(self):
+        """analyze_issues should expose actionable as a top-level enriched field."""
+        from script import analyze_issues
+
+        mock_classifier = Mock()
+        mock_classifier.classify_issue_with_related.return_value = (True, 'Cloud Armor', 86.0, 'HIGH', [])
+        mock_checker = Mock()
+        mock_checker.is_issue_available.return_value = (True, None)
+
+        issues = [{
+            'number': 12,
+            'title': 'Cloud Armor actionable issue',
+            'html_url': 'https://github.com/test/12',
+            'state': 'open',
+            'created_at': '2025-01-01T00:00:00Z',
+            'updated_at': '2025-01-01T00:00:00Z',
+            'labels': [{'name': 'good first issue'}],
+            'assignees': [],
+            'comments': 0,
+        }]
+
+        result = analyze_issues(issues, mock_classifier, mock_checker)
+
+        self.assertEqual(len(result), 1)
+        self.assertIn('actionable', result[0])
+        self.assertTrue(result[0]['actionable'])
+
 
 class TestGenerateReport(unittest.TestCase):
     """Tests for generate_report function."""

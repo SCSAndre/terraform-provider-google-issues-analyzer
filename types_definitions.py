@@ -30,5 +30,6 @@ class IssueData(TypedDict):
     label_types: LabelTypes
     assignees: List[str]
     is_assigned: bool
+    actionable: bool
     related_categories: List[str]
     priority_score: float
