@@ -506,6 +506,59 @@ class TestAnalyzeIssues(unittest.TestCase):
         self.assertIn('actionable', result[0])
         self.assertTrue(result[0]['actionable'])
 
+    def test_thumbs_up_extracted_from_reactions(self):
+        """thumbs_up is correctly extracted from the reactions dict."""
+        from script import analyze_issues
+
+        issue = {
+            'number': 13,
+            'title': 'Issue with reactions',
+            'html_url': 'https://github.com/test/13',
+            'state': 'open',
+            'created_at': '2025-01-01T00:00:00Z',
+            'updated_at': '2025-01-01T00:00:00Z',
+            'labels': [],
+            'assignees': [],
+            'comments': 0,
+            'reactions': {'+1': 7, 'total_count': 7},
+        }
+
+        mock_classifier = Mock()
+        mock_classifier.classify_issue_with_related.return_value = (True, 'Cloud Armor', 85.0, 'HIGH', [])
+        mock_checker = Mock()
+        mock_checker.is_issue_available.return_value = (True, None)
+
+        result = analyze_issues([issue], mock_classifier, mock_checker)
+
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0]['thumbs_up'], 7)
+
+    def test_thumbs_up_defaults_to_zero_when_missing(self):
+        """thumbs_up defaults to 0 when reactions key is absent."""
+        from script import analyze_issues
+
+        issue = {
+            'number': 14,
+            'title': 'Issue without reactions',
+            'html_url': 'https://github.com/test/14',
+            'state': 'open',
+            'created_at': '2025-01-01T00:00:00Z',
+            'updated_at': '2025-01-01T00:00:00Z',
+            'labels': [],
+            'assignees': [],
+            'comments': 0,
+        }
+
+        mock_classifier = Mock()
+        mock_classifier.classify_issue_with_related.return_value = (True, 'Cloud Armor', 85.0, 'HIGH', [])
+        mock_checker = Mock()
+        mock_checker.is_issue_available.return_value = (True, None)
+
+        result = analyze_issues([issue], mock_classifier, mock_checker)
+
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0]['thumbs_up'], 0)
+
 
 class TestGenerateReport(unittest.TestCase):
     """Tests for generate_report function."""
@@ -669,6 +722,20 @@ class TestGenerateReport(unittest.TestCase):
 class TestPriorityScoring(unittest.TestCase):
     """Tests for calculate_priority_score behavior."""
 
+    def _make_base_issue(self):
+        return {
+            'confidence': 70,
+            'confidence_band': 'REVIEW',
+            'comments': 1,
+            'reactions_plus_one': 2,
+            'age_days': 30,
+            'days_since_update': 20,
+            'is_bug': False,
+            'is_actionable': False,
+            'has_assignee': True,
+            'labels': [],
+        }
+
     def test_high_confidence_gets_bonus(self):
         from script import calculate_priority_score
 
@@ -804,6 +871,92 @@ class TestPriorityScoring(unittest.TestCase):
         )
 
         self.assertAlmostEqual(bug_score - non_bug_score, 5.0, places=7)
+
+    def test_size_xs_label_adds_bonus(self):
+        """size/xs label adds 12 points to priority score."""
+        from script import calculate_priority_score
+
+        issue = self._make_base_issue()
+        issue["labels"] = [{"name": "size/xs"}]
+        score_without = calculate_priority_score(**{**issue, "labels": []})
+        score_with = calculate_priority_score(**issue)
+        assert score_with == min(score_without + 12, 100)
+
+    def test_size_l_label_no_change(self):
+        """size/l label adds 0 points."""
+        from script import calculate_priority_score
+
+        issue = self._make_base_issue()
+        issue["labels"] = [{"name": "size/l"}]
+        score_without = calculate_priority_score(**{**issue, "labels": []})
+        score_with = calculate_priority_score(**issue)
+        assert score_with == score_without
+
+    def test_size_label_handles_string_format(self):
+        """Labels as plain strings (not dicts) are handled safely."""
+        from script import calculate_priority_score
+
+        issue = self._make_base_issue()
+        issue["labels"] = ["size/s", "bug"]
+        score_without = calculate_priority_score(**{**issue, "labels": []})
+        score_with = calculate_priority_score(**issue)
+        assert score_with == min(score_without + 10, 100)
+
+    def test_reactions_increase_priority_score(self):
+        """An issue with 15 thumbs_up scores higher than the same issue with 0."""
+        from script import calculate_priority_score
+
+        base = self._make_base_issue()
+        base["reactions_plus_one"] = 0
+        score_zero = calculate_priority_score(**base)
+        base["reactions_plus_one"] = 15
+        score_fifteen = calculate_priority_score(**base)
+        assert score_fifteen > score_zero
+
+    def test_reactions_capped_at_30(self):
+        """thumbs_up above 30 gives the same score as exactly 30."""
+        from script import calculate_priority_score
+
+        base = self._make_base_issue()
+        base["reactions_plus_one"] = 30
+        score_30 = calculate_priority_score(**base)
+        base["reactions_plus_one"] = 999
+        score_999 = calculate_priority_score(**base)
+        assert score_30 == score_999
+
+    def test_reactivation_bonus_applied_for_old_recent_issue(self):
+        """Issue older than 1 year with activity in last 90 days gets bonus."""
+        from script import calculate_priority_score
+
+        base = self._make_base_issue()
+        base["age_days"] = 730
+        base["days_since_update"] = 10
+        score_with = calculate_priority_score(**base)
+        base["days_since_update"] = 400
+        score_without = calculate_priority_score(**base)
+        assert score_with > score_without
+
+    def test_reactivation_bonus_zero_for_new_issue(self):
+        """New issue (< 1 year) gets no reactivation bonus."""
+        from script import calculate_priority_score
+
+        base = self._make_base_issue()
+        base["age_days"] = 180
+        base["days_since_update"] = 5
+        score = calculate_priority_score(**base)
+        assert 0 <= score <= 100
+
+    def test_reactivation_bonus_zero_for_stale_old_issue(self):
+        """Old issue with no recent activity gets no reactivation bonus."""
+        from script import calculate_priority_score
+
+        base = self._make_base_issue()
+        base["age_days"] = 730
+        base["days_since_update"] = 200
+        score_stale = calculate_priority_score(**base)
+        base["days_since_update"] = 10
+        score_active = calculate_priority_score(**base)
+        assert score_active > score_stale
 
 
 class TestModuleEntryPoint(unittest.TestCase):

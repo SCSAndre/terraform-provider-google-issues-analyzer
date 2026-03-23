@@ -306,18 +306,22 @@ def analyze_issues(
         
         # Get assignees
         assignees = [a["login"] for a in issue.get("assignees", [])]
+
+        reactions_data = issue.get("reactions", {})
+        thumbs_up = reactions_data.get("+1", 0) if isinstance(reactions_data, dict) else 0
         
         # Calculate priority score
         priority_score = calculate_priority_score(
             confidence=confidence,
             confidence_band=confidence_band,
             comments=issue.get("comments", 0),
-            reactions_plus_one=(issue.get("reactions") or {}).get("+1", 0),
+            reactions_plus_one=thumbs_up,
             age_days=age_days,
             days_since_update=days_since_update,
             is_bug=label_types.get("bug", False),
             is_actionable=is_actionable,
-            has_assignee=len(assignees) > 0
+            has_assignee=len(assignees) > 0,
+            labels=issue.get("labels", []),
         )
 
         # Add to results with enriched data
@@ -334,6 +338,7 @@ def analyze_issues(
             "age_days": age_days,
             "days_since_update": days_since_update,
             "comments": issue.get("comments", 0),
+            "thumbs_up": thumbs_up,
             "labels": labels,
             "label_types": label_types,
             "assignees": assignees,
@@ -368,17 +373,20 @@ def calculate_priority_score(
     days_since_update: int,
     is_bug: bool,
     is_actionable: bool = False,
-    has_assignee: bool = False
+    has_assignee: bool = False,
+    labels: List[Any] | None = None,
 ) -> float:
     """Calculate a priority score for issue ranking.
 
     Weight breakdown:
     - Confidence: 40 points max
-    - Comments: 10 points max
+    - Comments: 15 points max
     - Reactions: 15 points max
     - Neglect (age + staleness): 20 points max
+    - reactivation: old issue (>1y) with recent activity (<90d), max +15
     - Bug bonus: 5 points
     - Actionable bonus: 5 points
+    - size: maintainer effort estimate label (size/xs=+12, size/s=+10, size/m=+5)
     - Unassigned bonus: 10 points
     - High-confidence bonus: 5 points
 
@@ -386,12 +394,13 @@ def calculate_priority_score(
         confidence: Relevance confidence score from classifier.
         confidence_band: Confidence band label (HIGH, REVIEW, EXCLUDED).
         comments: Number of issue comments.
-        reactions_plus_one: Number of +1 reactions.
+        reactions_plus_one: Community thumbs-up count (+1 reactions), capped at 30.
         age_days: Days since issue creation.
         days_since_update: Days since last issue update.
         is_bug: True when issue has bug-like labels.
         is_actionable: True when issue has newcomer-friendly actionable labels.
         has_assignee: True when issue already has an assignee.
+        labels: Raw GitHub labels list (dicts with name or plain strings).
     
     Returns:
         Priority score from 0-100
@@ -401,17 +410,29 @@ def calculate_priority_score(
     # Confidence contributes 40%
     score += (confidence / 100) * 40
     
-    # Comments contribute 10% (cap at 20 comments)
+    # Comments contribute 15% (cap at 20 comments)
     comment_factor = min(comments, 20) / 20
-    score += comment_factor * 10
+    score += comment_factor * 15
 
-    # Reactions contribute 15% (cap at 30 upvotes)
-    reactions_factor = min(reactions_plus_one, 30) / 30
-    score += reactions_factor * 15
+    thumbs_up = max(int(reactions_plus_one), 0)
+    # Reactions factor: community demand signal (+1 count), weight 15%
+    # Cap at 30 reactions to avoid a single viral issue dominating
+    reactions_factor = min(thumbs_up, 30) / 30 * 15
+    score += reactions_factor
     
     # Neglect contributes 20% (weighted blend of age and staleness, cap at 2 years)
     neglect_days = min((age_days * 0.3) + (days_since_update * 0.7), 730)
     score += (neglect_days / 730) * 20
+
+    # Reactivation bonus: old issue that recently got new activity
+    # Signals upstream API changes, GA announcements, or renewed urgency.
+    # Formula scales by issue age and update recency with a max bonus of +15.
+    reactivation_bonus = 0
+    if age_days > 365 and days_since_update < 90:
+        age_factor = min(age_days / 730, 1.0)
+        recency_factor = 1.0 - (days_since_update / 90)
+        reactivation_bonus = round(age_factor * recency_factor * 15)
+    score += reactivation_bonus
     
     # Bug bonus: 5%
     if is_bug:
@@ -428,6 +449,30 @@ def calculate_priority_score(
     # High-confidence issues get a small ranking bonus.
     if confidence_band == "HIGH":
         score += 5
+
+    # Size bonus: maintainer effort estimate from size/* labels
+    size_bonus = 0
+    label_names: List[str] = []
+    for label in labels or []:
+        if isinstance(label, dict):
+            label_name = str(label.get("name") or "").strip().lower()
+        elif isinstance(label, str):
+            label_name = label.strip().lower()
+        else:
+            label_name = ""
+        if label_name:
+            label_names.append(label_name)
+
+    if "size/xs" in label_names:
+        size_bonus = 12
+    elif "size/s" in label_names:
+        size_bonus = 10
+    elif "size/m" in label_names:
+        size_bonus = 5
+    elif "size/xl" in label_names:
+        size_bonus = -3
+
+    score += size_bonus
     
     return min(score, 100)
 

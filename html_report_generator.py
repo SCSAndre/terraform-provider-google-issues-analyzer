@@ -89,6 +89,34 @@ def get_issue_confidence_band(issue: Dict[str, Any]) -> str:
     return "EXCLUDED"
 
 
+def _is_recaptcha_issue(issue: Dict[str, Any]) -> bool:
+    """Return True when issue title indicates reCAPTCHA Enterprise resources."""
+    title = str(issue.get("title") or "").lower()
+    return any(
+        term in title
+        for term in ("recaptcha", "recaptcha_enterprise", "google_recaptcha")
+    )
+
+
+def _get_recently_reactivated_issues(issues: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Return recently reactivated issues using report-specific business rules."""
+    reactivated = [
+        issue
+        for issue in issues
+        if issue.get("age_days", 0) > 365
+        and issue.get("days_since_update", 0) < 90
+        and issue.get("reactivation_bonus", 0) > 0
+        and not (
+            issue.get("label_types", {}).get("has_pr")
+            or issue.get("label_types", {}).get("good_first_issue")
+        )
+    ]
+    return sorted(
+        reactivated,
+        key=lambda issue: (-issue.get("reactivation_bonus", 0), issue.get("days_since_update", 0)),
+    )[:10]
+
+
 def calculate_statistics(issues: List[IssueData]) -> Dict[str, Any]:
     """Calculate report statistics."""
     total = len(issues)
@@ -199,10 +227,16 @@ def generate_html_content(issues: List[Dict[str, Any]], stats: Dict[str, Any]) -
         <div class="charts-row">
             {generate_charts_html(stats)}
         </div>
+
+        <div class="report-toggle-row">
+            <button id="issues-band-toggle-global" class="issues-toggle-button" type="button">Showing all issues  ▾</button>
+        </div>
         
         {generate_quick_wins_html(quick_wins)}
         
         {generate_attention_needed_html(attention_needed)}
+
+        {generate_recently_reactivated_html(issues)}
         
         {generate_top_issues_html(top_issues)}
         
@@ -452,6 +486,41 @@ def get_css_styles() -> str:
             cursor: pointer;
             font-size: 0.9rem;
             white-space: nowrap;
+        }
+
+        .report-toggle-row {
+            display: flex;
+            justify-content: flex-end;
+            margin-bottom: 1rem;
+        }
+
+        .subcategory-badge {
+            display: inline-block;
+            font-size: 0.7rem;
+            font-weight: 600;
+            padding: 0.15rem 0.5rem;
+            border-radius: 999px;
+            margin-left: 0.4rem;
+            vertical-align: middle;
+        }
+
+        .recaptcha-badge {
+            background: #fef3c7;
+            color: #92400e;
+            border: 1px solid #fde68a;
+        }
+
+        .subcategory-note {
+            font-size: 0.85rem;
+            color: #64748b;
+            margin: -0.5rem 0 1rem 0;
+            padding: 0.5rem 0.75rem;
+            border-left: 3px solid #fde68a;
+            background: #fffbeb;
+        }
+
+        .reactivated-card {
+            border-left: 4px solid #f59e0b;
         }
         
         .priority-bar {
@@ -710,6 +779,7 @@ def generate_quick_wins_html(issues: List[Dict[str, Any]]) -> str:
     for issue in issues:
         title = issue['title'][:60] + '...' if len(issue['title']) > 60 else issue['title']
         confidence_band = get_issue_confidence_band(issue)
+        subcategory_badge = '<span class="subcategory-badge recaptcha-badge">🔑 reCAPTCHA</span>' if _is_recaptcha_issue(issue) else ''
         reason = []
         if issue.get("label_types", {}).get("small"):
             reason.append("Small Size")
@@ -724,7 +794,7 @@ def generate_quick_wins_html(issues: List[Dict[str, Any]]) -> str:
         rows += f'''
             <tr data-band="{confidence_band}">
                 <td><a href="{issue['url']}" target="_blank">#{issue['number']}</a></td>
-                <td>{title}</td>
+                <td>{title}{subcategory_badge}</td>
                 <td><span class="category-badge">{issue['category']}</span></td>
                 <td>{get_confidence_badge(issue.get('confidence', 0))}</td>
                 <td>{reason_str}</td>
@@ -734,9 +804,9 @@ def generate_quick_wins_html(issues: List[Dict[str, Any]]) -> str:
     
     return f'''
         <div class="card">
-            <h3>🚀 Quick Wins</h3>
+            <h3>🚀 Quick Wins (<span id="quick-wins-count">{len(issues)} issues</span>)</h3>
             <p style="color: var(--text-muted); margin-bottom: 1rem;">Issues that may be easier to resolve (small size, has PR, or good first issue)</p>
-            <table>
+            <table id="quick-wins-table">
                 <thead>
                     <tr>
                         <th>Issue</th>
@@ -764,12 +834,13 @@ def generate_attention_needed_html(issues: List[Dict[str, Any]]) -> str:
     for issue in issues:
         title = issue['title'][:60] + '...' if len(issue['title']) > 60 else issue['title']
         confidence_band = get_issue_confidence_band(issue)
+        subcategory_badge = '<span class="subcategory-badge recaptcha-badge">🔑 reCAPTCHA</span>' if _is_recaptcha_issue(issue) else ''
         type_badge = '<span class="badge badge-bug">🐛 Bug</span>' if issue.get("label_types", {}).get("bug") else '<span class="badge badge-enhancement">✨ Enhancement</span>'
         
         rows += f'''
             <tr data-band="{confidence_band}">
                 <td><a href="{issue['url']}" target="_blank">#{issue['number']}</a></td>
-                <td>{title}</td>
+                <td>{title}{subcategory_badge}</td>
                 <td><span class="category-badge">{issue['category']}</span></td>
                 <td>{get_confidence_badge(issue.get('confidence', 0))}</td>
                 <td>{issue.get('comments', 0)}</td>
@@ -779,9 +850,9 @@ def generate_attention_needed_html(issues: List[Dict[str, Any]]) -> str:
     
     return f'''
         <div class="card">
-            <h3>⚠️ Attention Needed</h3>
+            <h3>⚠️ Attention Needed (<span id="attention-count">{len(issues)} issues</span>)</h3>
             <p style="color: var(--text-muted); margin-bottom: 1rem;">Stale issues (&gt;6 months) with significant community interest (3+ comments) but no assignee</p>
-            <table>
+            <table id="attention-table">
                 <thead>
                     <tr>
                         <th>Issue</th>
@@ -807,6 +878,7 @@ def generate_top_issues_html(issues: List[Dict[str, Any]]) -> str:
         title = issue['title'][:55] + '...' if len(issue['title']) > 55 else issue['title']
         priority = issue.get('priority_score', 0)
         confidence_band = get_issue_confidence_band(issue)
+        subcategory_badge = '<span class="subcategory-badge recaptcha-badge">🔑 reCAPTCHA</span>' if _is_recaptcha_issue(issue) else ''
         
         badges = []
         if issue.get("label_types", {}).get("bug"):
@@ -826,7 +898,7 @@ def generate_top_issues_html(issues: List[Dict[str, Any]]) -> str:
             <tr data-band="{confidence_band}">
                 <td>{i}</td>
                 <td><a href="{issue['url']}" target="_blank">#{issue['number']}</a></td>
-                <td>{title}</td>
+                <td>{title}{subcategory_badge}</td>
                 <td><span class="category-badge">{issue['category']}</span></td>
                 <td>{get_confidence_badge(issue.get('confidence', 0))}</td>
                 <td>
@@ -860,6 +932,56 @@ def generate_top_issues_html(issues: List[Dict[str, Any]]) -> str:
         </div>'''
 
 
+def generate_recently_reactivated_html(issues: List[Dict[str, Any]]) -> str:
+    """Generate the recently reactivated section."""
+    reactivated_issues = _get_recently_reactivated_issues(issues)
+
+    rows = ''
+    for issue in reactivated_issues:
+        title = issue['title'][:60] + '...' if len(issue['title']) > 60 else issue['title']
+        confidence_band = get_issue_confidence_band(issue)
+        type_badge = '<span class="badge badge-bug">🐛 Bug</span>' if issue.get("label_types", {}).get("bug") else '<span class="badge badge-enhancement">✨ Enhancement</span>'
+
+        rows += f'''
+            <tr data-band="{confidence_band}">
+                <td><a href="{issue['url']}" target="_blank">#{issue['number']}</a> 🔄</td>
+                <td>{title}</td>
+                <td><span class="category-badge">{issue['category']}</span></td>
+                <td>{get_confidence_badge(issue.get('confidence', 0))}</td>
+                <td>{format_age(issue.get('age_days', 0))}</td>
+                <td>{format_age(issue.get('days_since_update', 0))} ago</td>
+                <td>{type_badge}</td>
+            </tr>'''
+
+    if not rows:
+        rows = '''
+            <tr>
+                <td colspan="7">No recently reactivated issues found this week.</td>
+            </tr>'''
+
+    return f'''
+        <div class="card reactivated-card">
+            <h3>🔄 Recently Reactivated</h3>
+            <p style="color: var(--text-muted); margin-bottom: 1rem;">Old issues (&gt;1 year) with significant new activity in the last 90 days - may indicate upstream API changes or newly GA features</p>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Issue</th>
+                        <th>Title</th>
+                        <th>Category</th>
+                        <th>Confidence</th>
+                        <th>Age</th>
+                        <th>Last Update</th>
+                        <th>Type</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {rows}
+                </tbody>
+            </table>
+        </div>'''
+
+
 def generate_category_sections_html(by_category: Dict[str, List[Dict[str, Any]]]) -> str:
     """Generate the collapsible category sections."""
     sections = ''
@@ -869,12 +991,22 @@ def generate_category_sections_html(by_category: Dict[str, List[Dict[str, Any]]]
         issues = by_category[category]
         total_issues += len(issues)
         sorted_issues = sorted(issues, key=lambda x: x.get("priority_score", 0), reverse=True)
+        subcategory_note = ''
+        if category == "Cloud Armor":
+            subcategory_note = (
+                '<p class="subcategory-note">'
+                '🔑 Issues tagged <strong>reCAPTCHA</strong> involve the reCAPTCHA Enterprise '
+                'integration with Cloud Armor bot management - they use '
+                '<code>google_recaptcha_enterprise_*</code> resources.'
+                '</p>'
+            )
         
         rows = ''
         for issue in sorted_issues:
             title = issue['title'][:50] + '...' if len(issue['title']) > 50 else issue['title']
             priority = issue.get('priority_score', 0)
             confidence_band = get_issue_confidence_band(issue)
+            subcategory_badge = '<span class="subcategory-badge recaptcha-badge">🔑 reCAPTCHA</span>' if _is_recaptcha_issue(issue) else ''
             
             type_icon = ''
             if issue.get("label_types", {}).get("bug"):
@@ -897,7 +1029,7 @@ def generate_category_sections_html(by_category: Dict[str, List[Dict[str, Any]]]
             rows += f'''
                 <tr data-band="{confidence_band}">
                     <td><a href="{issue['url']}" target="_blank">#{issue['number']}</a></td>
-                    <td>{title}</td>
+                    <td>{title}{subcategory_badge}</td>
                     <td>
                         <span class="priority-bar"><span class="priority-fill" style="width: {priority}%"></span></span>
                         {priority:.0f}
@@ -912,6 +1044,7 @@ def generate_category_sections_html(by_category: Dict[str, List[Dict[str, Any]]]
         <details>
             <summary>📁 {category} (<span class="section-issue-count">{len(issues)} issues</span>)</summary>
             <div class="content">
+                {subcategory_note}
                 <table>
                     <thead>
                         <tr>
@@ -934,7 +1067,7 @@ def generate_category_sections_html(by_category: Dict[str, List[Dict[str, Any]]]
     return f'''
         <div class="card">
             <div class="detailed-issues-header">
-                <h3>📋 Detailed Issues by Category (<span id="detailed-issues-visible-count">{total_issues} issues</span>)</h3>
+                <h3>📋 Detailed Issues by Category (<span id="detail-count">{total_issues} issues</span>)</h3>
                 <button id="issues-band-toggle" class="issues-toggle-button" type="button">Showing all issues  ▾</button>
             </div>
             {sections}
@@ -955,12 +1088,35 @@ def get_chart_scripts(stats: Dict[str, Any]) -> str:
     
     return f'''
     <script>
-        let showingHighOnly = false;
+        let highOnlyMode = false;
+
+        function updateToggleLabels() {{
+            const text = highOnlyMode ? 'HIGH confidence only  ▾' : 'Showing all issues  ▾';
+            const globalToggle = document.getElementById('issues-band-toggle-global');
+            const detailToggle = document.getElementById('issues-band-toggle');
+            if (globalToggle) {{
+                globalToggle.textContent = text;
+            }}
+            if (detailToggle) {{
+                detailToggle.textContent = text;
+            }}
+        }}
 
         function updateVisibleIssueCounters() {{
-            const detailedRows = document.querySelectorAll('details tbody tr[data-band]');
+            const quickWinsVisible = document.querySelectorAll('#quick-wins-table tbody tr[data-band]:not([style*="display: none"])').length;
+            const quickWinsCount = document.getElementById('quick-wins-count');
+            if (quickWinsCount) {{
+                quickWinsCount.textContent = `${{quickWinsVisible}} issues`;
+            }}
+
+            const attentionVisible = document.querySelectorAll('#attention-table tbody tr[data-band]:not([style*="display: none"])').length;
+            const attentionCount = document.getElementById('attention-count');
+            if (attentionCount) {{
+                attentionCount.textContent = `${{attentionVisible}} issues`;
+            }}
+
             const visibleDetailedRows = document.querySelectorAll('details tbody tr[data-band]:not([style*="display: none"])');
-            const detailedCount = document.getElementById('detailed-issues-visible-count');
+            const detailedCount = document.getElementById('detail-count');
             if (detailedCount) {{
                 detailedCount.textContent = `${{visibleDetailedRows.length}} issues`;
             }}
@@ -975,24 +1131,26 @@ def get_chart_scripts(stats: Dict[str, Any]) -> str:
             }});
         }}
 
-        function toggleReviewRows() {{
-            showingHighOnly = !showingHighOnly;
+        function toggleConfidenceBand() {{
+            highOnlyMode = !highOnlyMode;
             const reviewRows = document.querySelectorAll('tr[data-band="REVIEW"]');
             reviewRows.forEach((row) => {{
-                row.style.display = showingHighOnly ? 'none' : '';
+                row.style.display = highOnlyMode ? 'none' : '';
             }});
 
-            const toggleButton = document.getElementById('issues-band-toggle');
-            if (toggleButton) {{
-                toggleButton.textContent = showingHighOnly ? 'HIGH confidence only  ▾' : 'Showing all issues  ▾';
-            }}
+            updateToggleLabels();
             updateVisibleIssueCounters();
         }}
 
+        const issuesBandToggleGlobal = document.getElementById('issues-band-toggle-global');
+        if (issuesBandToggleGlobal) {{
+            issuesBandToggleGlobal.addEventListener('click', toggleConfidenceBand);
+        }}
         const issuesBandToggle = document.getElementById('issues-band-toggle');
         if (issuesBandToggle) {{
-            issuesBandToggle.addEventListener('click', toggleReviewRows);
+            issuesBandToggle.addEventListener('click', toggleConfidenceBand);
         }}
+        updateToggleLabels();
         updateVisibleIssueCounters();
 
         if (typeof window.Chart === 'undefined') {{

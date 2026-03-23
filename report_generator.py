@@ -90,6 +90,7 @@ def generate_analysis_reports(
         write_executive_summary(report_file, generic_issues)
         write_quick_wins(report_file, generic_issues)
         write_attention_needed(report_file, generic_issues)
+        write_recently_reactivated(report_file, generic_issues)
         write_priority_recommendations(report_file, generic_issues)
         write_age_analysis(report_file, generic_issues)
         write_label_distribution(report_file, generic_issues)
@@ -244,6 +245,46 @@ def write_priority_recommendations(report_file: TextIO, issues: List[Dict[str, A
 
     report_file.write("\n")
     report_file.write("**Legend:** 🐛 Bug | 👤 Assigned | 💤 Stale | 🔥 Active\n\n")
+
+
+def write_recently_reactivated(report_file: TextIO, issues: List[Dict[str, Any]]) -> None:
+    """Write recently reactivated issues section."""
+    reactivated = [
+        issue
+        for issue in issues
+        if issue.get("age_days", 0) > 365
+        and issue.get("days_since_update", 0) < 90
+        and issue.get("reactivation_bonus", 0) > 0
+        and not (
+            issue.get("label_types", {}).get("has_pr")
+            or issue.get("label_types", {}).get("good_first_issue")
+        )
+    ]
+    reactivated = sorted(
+        reactivated,
+        key=lambda issue: (-issue.get("reactivation_bonus", 0), issue.get("days_since_update", 0)),
+    )[:10]
+
+    report_file.write("## 🔄 Recently Reactivated Issues\n\n")
+
+    if not reactivated:
+        report_file.write("> No recently reactivated issues this week.\n\n")
+        return
+
+    report_file.write("| Issue | Category | Confidence | Age | Last Update | Type |\n")
+    report_file.write("|-------|----------|------------|-----|-------------|------|\n")
+
+    for issue in reactivated:
+        title = issue["title"][:40] + "..." if len(issue["title"]) > 40 else issue["title"]
+        issue_type = "🐛" if issue.get("label_types", {}).get("bug") else "✨"
+        report_file.write(
+            f"| [#{issue['number']}]({issue['url']}) 🔄 {title} | {issue['category']} | "
+            f"{issue.get('confidence_band', 'EXCLUDED')} ({issue.get('confidence', 0):.1f}%) | "
+            f"{format_age(issue.get('age_days', 0))} | {format_age(issue.get('days_since_update', 0))} ago | "
+            f"{issue_type} |\n"
+        )
+
+    report_file.write("\n")
 
 
 def write_age_analysis(report_file: TextIO, issues: List[Dict[str, Any]]) -> None:

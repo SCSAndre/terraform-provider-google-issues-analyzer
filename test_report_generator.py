@@ -5,7 +5,7 @@ import tempfile
 import os
 from pathlib import Path
 
-from report_generator import ReportGenerator
+from report_generator import ReportGenerator, generate_analysis_reports
 
 
 class TestReportGeneratorGrouping(unittest.TestCase):
@@ -118,6 +118,45 @@ class TestReportGeneratorFormatting(unittest.TestCase):
         low_pos = written.find("#1")
         self.assertLess(high_pos, med_pos)
         self.assertLess(med_pos, low_pos)
+
+
+class TestReportGeneratorRecentlyReactivated(unittest.TestCase):
+    """Tests for recently reactivated markdown section rendering."""
+
+    def _make_reactivated_issue(self):
+        return {
+            "number": 14896,
+            "title": "google_compute_security_policy block is broken after GA update",
+            "url": "https://github.com/test/14896",
+            "state": "open",
+            "category": "Cloud Armor",
+            "confidence": 90.0,
+            "confidence_band": "HIGH",
+            "created_at": "2024-01-01T00:00:00Z",
+            "updated_at": "2026-01-01T00:00:00Z",
+            "age_days": 1000,
+            "days_since_update": 60,
+            "comments": 4,
+            "labels": ["bug"],
+            "label_types": {"bug": True, "has_pr": False, "good_first_issue": False},
+            "assignees": [],
+            "is_assigned": False,
+            "related_categories": [],
+            "priority_score": 80.0,
+            "reactivation_bonus": 8,
+        }
+
+    @patch('report_generator.generate_html_report')
+    def test_markdown_reactivated_section_present(self, mock_generate_html_report):
+        """Markdown report contains the Recently Reactivated section."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            mock_generate_html_report.return_value = temp_path / "terraform_issues_report.html"
+
+            paths = generate_analysis_reports([self._make_reactivated_issue()], output_dir=temp_path)
+            report = paths["markdown"].read_text(encoding="utf-8")
+
+        assert "Recently Reactivated" in report
 
 
 if __name__ == "__main__":

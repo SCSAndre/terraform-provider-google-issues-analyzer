@@ -416,5 +416,161 @@ class TestHtmlConfidenceToggle(unittest.TestCase):
         self.assertEqual(html.count('data-band="HIGH"'), 2)
 
 
+class TestHtmlRecaptchaBadge(unittest.TestCase):
+    """Tests for reCAPTCHA subcategory visuals."""
+
+    def _make_base_issue(self):
+        return {
+            'number': 301,
+            'title': 'Base issue title',
+            'url': 'https://github.com/test/301',
+            'category': 'Cloud Armor',
+            'confidence': 90.0,
+            'confidence_band': 'HIGH',
+            'label_types': {'bug': True},
+            'is_assigned': False,
+            'age_days': 100,
+            'days_since_update': 10,
+            'comments': 2,
+            'priority_score': 72.0,
+            'labels': ['bug'],
+            'created_at': '2025-01-01T00:00:00Z',
+            'updated_at': '2025-10-01T00:00:00Z',
+            'assignees': [],
+            'related_categories': [],
+        }
+
+    def test_recaptcha_badge_present_for_recaptcha_issue(self):
+        """reCAPTCHA issues get the subcategory badge in the rendered HTML."""
+        issue = self._make_base_issue()
+        issue["title"] = "reCAPTCHA does not return the Legacy secret key"
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            output_path = generate_html_report([issue], Path(temp_dir))
+            html = output_path.read_text()
+
+        assert "recaptcha-badge" in html
+        assert "🔑 reCAPTCHA" in html
+
+    def test_recaptcha_badge_absent_for_non_recaptcha_issue(self):
+        """Non-reCAPTCHA issues do not get the badge."""
+        issue = self._make_base_issue()
+        issue["title"] = "google_compute_security_policy preconfigured_waf_config drift"
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            output_path = generate_html_report([issue], Path(temp_dir))
+            html = output_path.read_text()
+
+        assert "🔑 reCAPTCHA" not in html
+
+
+class TestHtmlGlobalConfidenceToggle(unittest.TestCase):
+    """Tests for confidence toggle coverage across all sections."""
+
+    def _make_high_issue(self):
+        return {
+            'number': 401,
+            'title': 'Cloud Armor high issue',
+            'url': 'https://github.com/test/401',
+            'category': 'Cloud Armor',
+            'confidence': 90.0,
+            'confidence_band': 'HIGH',
+            'label_types': {'bug': True, 'has_pr': True},
+            'is_assigned': False,
+            'age_days': 500,
+            'days_since_update': 200,
+            'comments': 5,
+            'priority_score': 80.0,
+            'labels': ['bug', 'has-pr'],
+            'created_at': '2025-01-01T00:00:00Z',
+            'updated_at': '2025-10-01T00:00:00Z',
+            'assignees': [],
+            'related_categories': [],
+        }
+
+    def _make_review_issue(self):
+        issue = self._make_high_issue()
+        issue['number'] = 402
+        issue['title'] = 'Cloud Armor review issue'
+        issue['url'] = 'https://github.com/test/402'
+        issue['confidence'] = 75.0
+        issue['confidence_band'] = 'REVIEW'
+        issue['priority_score'] = 60.0
+        return issue
+
+    def test_all_tables_have_data_band_attributes(self):
+        """All four tables emit data-band attributes on issue rows."""
+        issues = [self._make_high_issue(), self._make_review_issue()]
+        with tempfile.TemporaryDirectory() as temp_dir:
+            output_path = generate_html_report(issues, Path(temp_dir))
+            html = output_path.read_text()
+
+        assert html.count('data-band="HIGH"') >= 2
+        assert html.count('data-band="REVIEW"') >= 2
+
+    def test_section_counter_ids_present(self):
+        """Section headers have the expected id attributes for JS targeting."""
+        issues = [self._make_high_issue()]
+        with tempfile.TemporaryDirectory() as temp_dir:
+            output_path = generate_html_report(issues, Path(temp_dir))
+            html = output_path.read_text()
+
+        assert 'id="quick-wins-count"' in html
+        assert 'id="attention-count"' in html
+        assert 'id="detail-count"' in html
+
+
+class TestHtmlRecentlyReactivated(unittest.TestCase):
+    """Tests for the recently reactivated section in HTML report."""
+
+    def _make_reactivated_issue(self):
+        return {
+            'number': 14896,
+            'title': 'google_compute_security_policy block is broken after GA update',
+            'url': 'https://github.com/test/14896',
+            'category': 'Cloud Armor',
+            'confidence': 90.0,
+            'confidence_band': 'HIGH',
+            'label_types': {'bug': True, 'has_pr': False, 'good_first_issue': False},
+            'is_assigned': False,
+            'age_days': 1000,
+            'days_since_update': 60,
+            'comments': 4,
+            'priority_score': 80.0,
+            'reactivation_bonus': 8,
+            'labels': ['bug'],
+            'created_at': '2024-01-01T00:00:00Z',
+            'updated_at': '2026-01-01T00:00:00Z',
+            'assignees': [],
+            'related_categories': [],
+        }
+
+    def _make_high_issue(self):
+        issue = self._make_reactivated_issue()
+        issue['number'] = 50001
+        issue['title'] = 'standard high confidence issue'
+        issue['age_days'] = 30
+        issue['days_since_update'] = 5
+        issue['reactivation_bonus'] = 0
+        return issue
+
+    def test_reactivated_section_present_in_html(self):
+        """HTML report contains the Recently Reactivated section header."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            output_path = generate_html_report([self._make_reactivated_issue()], Path(temp_dir))
+            html = output_path.read_text()
+        assert "Recently Reactivated" in html
+
+    def test_reactivated_section_empty_state(self):
+        """When no issues qualify, placeholder text is shown."""
+        issue = self._make_high_issue()
+        issue["age_days"] = 30
+        issue["reactivation_bonus"] = 0
+        with tempfile.TemporaryDirectory() as temp_dir:
+            output_path = generate_html_report([issue], Path(temp_dir))
+            html = output_path.read_text()
+        assert "No recently reactivated issues" in html
+
+
 if __name__ == '__main__':
     unittest.main()
