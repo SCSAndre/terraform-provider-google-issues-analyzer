@@ -437,6 +437,60 @@ class TestIssueClassifierShadowMode(unittest.TestCase):
         self.assertFalse(comparison["shadow"]["is_relevant"])
 
 
+class TestIssueClassifierNegativeGate(unittest.TestCase):
+    """Tests for pre-TFIDF negative keyword exclusions."""
+
+    def test_negative_gate_firebase_excluded(self):
+        """Issue about Firebase App Check with reCAPTCHA is excluded."""
+        issue = {
+            "number": 17095,
+            "title": "Support Firebase App Check",
+            "body": "We need resources for google_firebase_app_check_recaptcha_enterprise_config",
+            "labels": []
+        }
+        classifier = IssueClassifier()
+        is_relevant, category, score, band, _ = classifier.classify_issue_with_related(issue)
+        assert is_relevant is False
+
+    def test_negative_gate_dns_excluded(self):
+        """Issue about google_dns_managed_zone is excluded."""
+        issue = {
+            "number": 17682,
+            "title": "failed to apply google_dns_managed_zone",
+            "body": "dnssec_config is drifting after apply. security policy unrelated.",
+            "labels": []
+        }
+        classifier = IssueClassifier()
+        is_relevant, _, _, _, _ = classifier.classify_issue_with_related(issue)
+        assert is_relevant is False
+
+    def test_negative_gate_does_not_exclude_real_cloud_armor(self):
+        """An issue mentioning google_compute_security_policy is NOT excluded."""
+        issue = {
+            "number": 18596,
+            "title": "google_compute_security_policy preconfigured_waf_config drift",
+            "body": "google_compute_security_policy preconfigured_waf_config block appears on every plan",
+            "labels": []
+        }
+        classifier = IssueClassifier()
+        is_relevant, category, _, _, _ = classifier.classify_issue_with_related(issue)
+        assert is_relevant is True
+        assert category == "Cloud Armor"
+
+    def test_negative_gate_returns_false_on_empty_body(self):
+        """Negative gate handles None/empty body gracefully."""
+        issue = {
+            "number": 99999,
+            "title": "google_dns_managed_zone drift",
+            "body": None,
+            "labels": []
+        }
+        classifier = IssueClassifier()
+        # Must not raise any exception
+        result = classifier.classify_issue_with_related(issue)
+        assert result is not None
+
+
 class TestLabelClassification(unittest.TestCase):
     """Tests for classify_labels utility in classifier module."""
 

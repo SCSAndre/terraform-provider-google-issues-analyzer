@@ -131,6 +131,8 @@ class IssueClassifier:
         """
         # Quick keyword check first (most efficient)
         is_match, category, confidence, confidence_band = self._quick_keyword_check(issue)
+        if self._is_excluded_by_negative_gate(issue):
+            return False, None, 0.0, "EXCLUDED"
         if is_match:
             return True, category, confidence, confidence_band
 
@@ -142,6 +144,76 @@ class IssueClassifier:
 
         is_relevant, category, score, band, _ = self._evaluate_scores_with_related(final_scores)
         return is_relevant, category, score, band
+
+    def _is_excluded_by_negative_gate(self, issue: Dict[str, Any]) -> bool:
+        """Exclude known non-Cloud-Armor contexts before expensive scoring."""
+        try:
+            title = str(issue.get("title") or "")
+            body = str(issue.get("body") or "")
+            combined_text = f"{title}\n{body}"
+            text_lower = combined_text.lower()
+
+            issue_number = issue.get("number")
+            cloud_armor_keywords = self.critical_keywords.get("Cloud Armor", [])
+            has_cloud_armor_keyword = any(keyword in text_lower for keyword in cloud_armor_keywords)
+
+            # Condition 1: first mentioned Terraform resource clearly belongs to other GCP services.
+            first_resource_match = re.search(r"google_[a-z_]+", text_lower)
+            if first_resource_match:
+                first_resource = first_resource_match.group(0)
+                non_cloud_armor_prefixes = (
+                    "google_dns_",
+                    "google_firebase_",
+                    "google_bigquery_",
+                    "google_storage_bucket",
+                    "google_sql_",
+                    "google_container_",
+                    "google_pubsub_",
+                    "google_cloud_run_",
+                    "google_artifact_registry_",
+                    "google_spanner_",
+                    "google_dataflow_",
+                )
+                if first_resource.startswith(non_cloud_armor_prefixes) and not has_cloud_armor_keyword:
+                    logger.debug(
+                        "Negative gate excluded issue #%s by condition_1 (first_resource=%s)",
+                        issue_number,
+                        first_resource,
+                    )
+                    return True
+
+            # Condition 2: Firebase context without Cloud Armor signals.
+            if (
+                "firebase" in text_lower
+                and "cloud armor" not in text_lower
+                and "compute_security_policy" not in text_lower
+            ):
+                logger.debug(
+                    "Negative gate excluded issue #%s by condition_2 (firebase context)",
+                    issue_number,
+                )
+                return True
+
+            # Condition 3: DNSSEC/DNS context without Cloud Armor signals.
+            if (
+                ("dnssec" in text_lower or "google_dns_" in text_lower)
+                and "cloud armor" not in text_lower
+                and "compute_security_policy" not in text_lower
+            ):
+                logger.debug(
+                    "Negative gate excluded issue #%s by condition_3 (dns context)",
+                    issue_number,
+                )
+                return True
+
+            return False
+        except Exception as e:
+            logger.debug(
+                "Negative gate failed for issue #%s: %s",
+                issue.get("number"),
+                e,
+            )
+            return False
 
     def _quick_keyword_check(self, issue: Dict) -> Tuple[bool, Optional[str], float, str]:
         """Fast pre-filtering using critical keywords."""
@@ -353,6 +425,8 @@ class IssueClassifier:
         """
         # Quick keyword check first (most efficient)
         is_match, category, confidence, confidence_band = self._quick_keyword_check(issue)
+        if self._is_excluded_by_negative_gate(issue):
+            return False, None, 0.0, "EXCLUDED", []
         if is_match:
             return True, category, confidence, confidence_band, []
 
