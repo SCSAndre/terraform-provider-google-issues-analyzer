@@ -332,5 +332,89 @@ class TestHtmlEmpty(unittest.TestCase):
             self.assertIn('0', content)
 
 
+class TestHtmlConfidenceToggle(unittest.TestCase):
+    """Test confidence-band toggle markup and row attributes."""
+
+    def test_toggle_button_present_in_html(self):
+        """The generated HTML contains the toggle button."""
+        by_category = {
+            'Cloud Armor': [
+                {
+                    'number': 101,
+                    'title': 'High confidence issue',
+                    'url': 'https://github.com/test/101',
+                    'confidence': 90.0,
+                    'confidence_band': 'HIGH',
+                    'label_types': {},
+                    'age_days': 10,
+                    'days_since_update': 3,
+                    'priority_score': 80,
+                },
+                {
+                    'number': 102,
+                    'title': 'Review confidence issue',
+                    'url': 'https://github.com/test/102',
+                    'confidence': 75.0,
+                    'confidence_band': 'REVIEW',
+                    'label_types': {},
+                    'age_days': 20,
+                    'days_since_update': 5,
+                    'priority_score': 60,
+                },
+            ]
+        }
+
+        html = generate_category_sections_html(by_category)
+
+        self.assertIn('data-band="HIGH"', html)
+        self.assertIn('data-band="REVIEW"', html)
+        self.assertIn('Showing all issues', html)
+
+    def test_review_rows_have_data_band_attribute(self):
+        """Every REVIEW confidence issue row has data-band='REVIEW'."""
+        by_category = {
+            'Cloud Armor': [
+                {
+                    'number': 201,
+                    'title': 'High confidence issue one',
+                    'url': 'https://github.com/test/201',
+                    'confidence': 92.0,
+                    'confidence_band': 'HIGH',
+                    'label_types': {},
+                    'age_days': 10,
+                    'days_since_update': 2,
+                    'priority_score': 90,
+                },
+                {
+                    'number': 202,
+                    'title': 'High confidence issue two',
+                    'url': 'https://github.com/test/202',
+                    'confidence': 88.0,
+                    'confidence_band': 'HIGH',
+                    'label_types': {},
+                    'age_days': 15,
+                    'days_since_update': 4,
+                    'priority_score': 70,
+                },
+                {
+                    'number': 203,
+                    'title': 'Review confidence issue',
+                    'url': 'https://github.com/test/203',
+                    'confidence': 76.0,
+                    'confidence_band': 'REVIEW',
+                    'label_types': {},
+                    'age_days': 25,
+                    'days_since_update': 8,
+                    'priority_score': 55,
+                },
+            ]
+        }
+
+        html = generate_category_sections_html(by_category)
+
+        self.assertEqual(html.count('data-band="REVIEW"'), 1)
+        self.assertEqual(html.count('data-band="HIGH"'), 2)
+
+
 if __name__ == '__main__':
     unittest.main()

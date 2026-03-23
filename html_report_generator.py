@@ -75,6 +75,20 @@ def get_confidence_badge(score: float) -> str:
     return f'<span class="badge {css_class}">{band} {score:.1f}%</span>'
 
 
+def get_issue_confidence_band(issue: Dict[str, Any]) -> str:
+    """Return normalized confidence band for issue row filtering."""
+    band = str(issue.get("confidence_band", "")).upper()
+    if band in {"HIGH", "REVIEW", "EXCLUDED"}:
+        return band
+
+    score = float(issue.get("confidence", 0))
+    if score >= HIGH_CONFIDENCE_THRESHOLD:
+        return "HIGH"
+    if score >= MEDIUM_CONFIDENCE_THRESHOLD:
+        return "REVIEW"
+    return "EXCLUDED"
+
+
 def calculate_statistics(issues: List[IssueData]) -> Dict[str, Any]:
     """Calculate report statistics."""
     total = len(issues)
@@ -416,6 +430,29 @@ def get_css_styles() -> str:
             background: #fef3c7;
             color: #92400e;
         }
+
+        .detailed-issues-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 1rem;
+            margin-bottom: 1rem;
+        }
+
+        .detailed-issues-header h3 {
+            margin-bottom: 0;
+        }
+
+        .issues-toggle-button {
+            background: var(--primary-color);
+            color: #ffffff;
+            border: none;
+            border-radius: 6px;
+            padding: 0.4rem 1rem;
+            cursor: pointer;
+            font-size: 0.9rem;
+            white-space: nowrap;
+        }
         
         .priority-bar {
             width: 60px;
@@ -672,6 +709,7 @@ def generate_quick_wins_html(issues: List[Dict[str, Any]]) -> str:
     rows = ''
     for issue in issues:
         title = issue['title'][:60] + '...' if len(issue['title']) > 60 else issue['title']
+        confidence_band = get_issue_confidence_band(issue)
         reason = []
         if issue.get("label_types", {}).get("small"):
             reason.append("Small Size")
@@ -684,7 +722,7 @@ def generate_quick_wins_html(issues: List[Dict[str, Any]]) -> str:
         type_badge = '<span class="badge badge-bug">🐛 Bug</span>' if issue.get("label_types", {}).get("bug") else '<span class="badge badge-enhancement">✨ Enhancement</span>'
         
         rows += f'''
-            <tr>
+            <tr data-band="{confidence_band}">
                 <td><a href="{issue['url']}" target="_blank">#{issue['number']}</a></td>
                 <td>{title}</td>
                 <td><span class="category-badge">{issue['category']}</span></td>
@@ -725,10 +763,11 @@ def generate_attention_needed_html(issues: List[Dict[str, Any]]) -> str:
     rows = ''
     for issue in issues:
         title = issue['title'][:60] + '...' if len(issue['title']) > 60 else issue['title']
+        confidence_band = get_issue_confidence_band(issue)
         type_badge = '<span class="badge badge-bug">🐛 Bug</span>' if issue.get("label_types", {}).get("bug") else '<span class="badge badge-enhancement">✨ Enhancement</span>'
         
         rows += f'''
-            <tr>
+            <tr data-band="{confidence_band}">
                 <td><a href="{issue['url']}" target="_blank">#{issue['number']}</a></td>
                 <td>{title}</td>
                 <td><span class="category-badge">{issue['category']}</span></td>
@@ -767,6 +806,7 @@ def generate_top_issues_html(issues: List[Dict[str, Any]]) -> str:
     for i, issue in enumerate(issues, 1):
         title = issue['title'][:55] + '...' if len(issue['title']) > 55 else issue['title']
         priority = issue.get('priority_score', 0)
+        confidence_band = get_issue_confidence_band(issue)
         
         badges = []
         if issue.get("label_types", {}).get("bug"):
@@ -783,7 +823,7 @@ def generate_top_issues_html(issues: List[Dict[str, Any]]) -> str:
         badges_html = ' '.join(badges)
         
         rows += f'''
-            <tr>
+            <tr data-band="{confidence_band}">
                 <td>{i}</td>
                 <td><a href="{issue['url']}" target="_blank">#{issue['number']}</a></td>
                 <td>{title}</td>
@@ -823,15 +863,18 @@ def generate_top_issues_html(issues: List[Dict[str, Any]]) -> str:
 def generate_category_sections_html(by_category: Dict[str, List[Dict[str, Any]]]) -> str:
     """Generate the collapsible category sections."""
     sections = ''
+    total_issues = 0
     
     for category in sorted(by_category.keys()):
         issues = by_category[category]
+        total_issues += len(issues)
         sorted_issues = sorted(issues, key=lambda x: x.get("priority_score", 0), reverse=True)
         
         rows = ''
         for issue in sorted_issues:
             title = issue['title'][:50] + '...' if len(issue['title']) > 50 else issue['title']
             priority = issue.get('priority_score', 0)
+            confidence_band = get_issue_confidence_band(issue)
             
             type_icon = ''
             if issue.get("label_types", {}).get("bug"):
@@ -852,7 +895,7 @@ def generate_category_sections_html(by_category: Dict[str, List[Dict[str, Any]]]
             status_html = ' '.join(status_icons)
             
             rows += f'''
-                <tr>
+                <tr data-band="{confidence_band}">
                     <td><a href="{issue['url']}" target="_blank">#{issue['number']}</a></td>
                     <td>{title}</td>
                     <td>
@@ -867,7 +910,7 @@ def generate_category_sections_html(by_category: Dict[str, List[Dict[str, Any]]]
         
         sections += f'''
         <details>
-            <summary>📁 {category} ({len(issues)} issues)</summary>
+            <summary>📁 {category} (<span class="section-issue-count">{len(issues)} issues</span>)</summary>
             <div class="content">
                 <table>
                     <thead>
@@ -890,7 +933,10 @@ def generate_category_sections_html(by_category: Dict[str, List[Dict[str, Any]]]
     
     return f'''
         <div class="card">
-            <h3>📋 Detailed Issues by Category</h3>
+            <div class="detailed-issues-header">
+                <h3>📋 Detailed Issues by Category (<span id="detailed-issues-visible-count">{total_issues} issues</span>)</h3>
+                <button id="issues-band-toggle" class="issues-toggle-button" type="button">Showing all issues  ▾</button>
+            </div>
             {sections}
         </div>'''
 
@@ -909,6 +955,46 @@ def get_chart_scripts(stats: Dict[str, Any]) -> str:
     
     return f'''
     <script>
+        let showingHighOnly = false;
+
+        function updateVisibleIssueCounters() {{
+            const detailedRows = document.querySelectorAll('details tbody tr[data-band]');
+            const visibleDetailedRows = document.querySelectorAll('details tbody tr[data-band]:not([style*="display: none"])');
+            const detailedCount = document.getElementById('detailed-issues-visible-count');
+            if (detailedCount) {{
+                detailedCount.textContent = `${{visibleDetailedRows.length}} issues`;
+            }}
+
+            document.querySelectorAll('details').forEach((detailsEl) => {{
+                const summaryCount = detailsEl.querySelector('.section-issue-count');
+                if (!summaryCount) {{
+                    return;
+                }}
+                const visibleRows = detailsEl.querySelectorAll('tbody tr[data-band]:not([style*="display: none"])').length;
+                summaryCount.textContent = `${{visibleRows}} issues`;
+            }});
+        }}
+
+        function toggleReviewRows() {{
+            showingHighOnly = !showingHighOnly;
+            const reviewRows = document.querySelectorAll('tr[data-band="REVIEW"]');
+            reviewRows.forEach((row) => {{
+                row.style.display = showingHighOnly ? 'none' : '';
+            }});
+
+            const toggleButton = document.getElementById('issues-band-toggle');
+            if (toggleButton) {{
+                toggleButton.textContent = showingHighOnly ? 'HIGH confidence only  ▾' : 'Showing all issues  ▾';
+            }}
+            updateVisibleIssueCounters();
+        }}
+
+        const issuesBandToggle = document.getElementById('issues-band-toggle');
+        if (issuesBandToggle) {{
+            issuesBandToggle.addEventListener('click', toggleReviewRows);
+        }}
+        updateVisibleIssueCounters();
+
         if (typeof window.Chart === 'undefined') {{
             document.querySelectorAll('canvas').forEach((canvas) => {{
                 const message = document.createElement('p');
