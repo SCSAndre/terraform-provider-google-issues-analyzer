@@ -15,6 +15,43 @@ from utils import format_age
 logger = logging.getLogger(__name__)
 
 
+def _is_entry_point(issue: Dict[str, Any]) -> bool:
+    """Return True if this issue qualifies as a contributor entry point."""
+    if issue.get("confidence_band") != "HIGH":
+        return False
+    if issue.get("is_blocked", False):
+        return False
+    labels = [label.lower() for label in issue.get("labels", [])]
+    if "breaking-change" in labels:
+        return False
+    lt = issue.get("label_types", {})
+    if "new-resource" in labels or lt.get("new_resource", False):
+        return False
+    has_effort_signal = (
+        any(size in labels for size in ("size/xs", "size/s"))
+        or lt.get("has_pr", False)
+        or lt.get("documentation", False)
+    )
+    if not has_effort_signal:
+        return False
+    return issue.get("is_internally_tracked", False) or issue.get("priority_score", 0) >= 65
+
+
+def _entry_point_reason(issue: Dict[str, Any]) -> str:
+    """Return concise rationale for entry-point eligibility."""
+    labels = [label.lower() for label in issue.get("labels", [])]
+    lt = issue.get("label_types", {})
+    if lt.get("has_pr", False):
+        return "Finish existing PR"
+    if lt.get("documentation", False):
+        return "Docs fix"
+    if "size/xs" in labels:
+        return "Tiny scope (xs)"
+    if "size/s" in labels:
+        return "Small scope (s)"
+    return "Actionable"
+
+
 class ReportGenerator:
     """Handles report generation in various formats."""
 
@@ -88,6 +125,7 @@ def generate_analysis_reports(
         report_file.write("---\n\n")
         generic_issues: List[Dict[str, Any]] = [dict(issue) for issue in issues]
         write_executive_summary(report_file, generic_issues)
+        write_contributor_entry_points(report_file, generic_issues)
         write_quick_wins(report_file, generic_issues)
         write_attention_needed(report_file, generic_issues)
         write_recently_reactivated(report_file, generic_issues)
@@ -112,8 +150,14 @@ def write_executive_summary(report_file: TextIO, issues: List[Dict[str, Any]]) -
 
     bugs = sum(1 for issue in issues if issue.get("label_types", {}).get("bug", False))
     enhancements = sum(1 for issue in issues if issue.get("label_types", {}).get("enhancement", False))
-    assigned = sum(1 for issue in issues if issue.get("is_assigned", False))
-    unassigned = total - assigned
+    internally_tracked = sum(1 for issue in issues if issue.get("is_internally_tracked", False))
+    truly_orphaned = sum(
+        1
+        for issue in issues
+        if not issue.get("is_internally_tracked", False)
+        and not issue.get("is_blocked", False)
+        and not issue.get("label_types", {}).get("has_pr", False)
+    )
     has_pr = sum(1 for issue in issues if issue.get("label_types", {}).get("has_pr", False))
     high_confidence = sum(1 for issue in issues if issue.get("confidence_band") == "HIGH")
     review_confidence = sum(1 for issue in issues if issue.get("confidence_band") == "REVIEW")
@@ -122,7 +166,7 @@ def write_executive_summary(report_file: TextIO, issues: List[Dict[str, Any]]) -
     avg_comments = sum(issue.get("comments", 0) for issue in issues) / total
 
     stale_count = sum(1 for issue in issues if issue.get("days_since_update", 0) > 180)
-    active_count = sum(1 for issue in issues if issue.get("days_since_update", 0) < 30)
+    active_count = sum(1 for issue in issues if issue.get("days_since_update", 0) < 7)
 
     report_file.write("| Metric | Value |\n")
     report_file.write("|--------|-------|\n")
@@ -131,13 +175,13 @@ def write_executive_summary(report_file: TextIO, issues: List[Dict[str, Any]]) -
     report_file.write(f"| 🟡 Review Confidence | {review_confidence} ({review_confidence*100//total}%) |\n")
     report_file.write(f"| 🐛 Bugs | {bugs} ({bugs*100//total}%) |\n")
     report_file.write(f"| ✨ Enhancements | {enhancements} ({enhancements*100//total}%) |\n")
-    report_file.write(f"| 👤 Assigned | {assigned} ({assigned*100//total}%) |\n")
-    report_file.write(f"| ⚠️ Unassigned | {unassigned} ({unassigned*100//total}%) |\n")
+    report_file.write(f"| 🔖 Internally Tracked | {internally_tracked} ({internally_tracked*100//total}%) |\n")
+    report_file.write(f"| 👻 Truly Orphaned | {truly_orphaned} ({truly_orphaned*100//total}%) |\n")
     report_file.write(f"| 📅 Average Age | {format_age(int(avg_age))} |\n")
     report_file.write(f"| 💬 Avg Comments | {avg_comments:.1f} |\n")
-    report_file.write(f"| 🔥 Active (<30d) | {active_count} |\n")
+    report_file.write(f"| ⚡ Active (7d) | {active_count} |\n")
     report_file.write(f"| 💤 Stale (>180d) | {stale_count} |\n")
-    report_file.write(f"| 🔗 Has PR | {has_pr} |\n")
+    report_file.write(f"| 🔗 Has Linked PR | {has_pr} |\n")
     report_file.write("\n")
 
 
@@ -178,6 +222,35 @@ def write_quick_wins(report_file: TextIO, issues: List[Dict[str, Any]]) -> None:
             f"{issue.get('confidence_band', 'EXCLUDED')} ({issue.get('confidence', 0):.1f}%) | "
             f"{issue['reason']} | {format_age(issue.get('age_days', 0))} | "
             f"{issue.get('priority_score', 0):.0f} |\n"
+        )
+
+    report_file.write("\n")
+
+
+def write_contributor_entry_points(report_file: TextIO, issues: List[Dict[str, Any]]) -> None:
+    """Write curated contributor entry points section."""
+    report_file.write("## 🎯 Contributor Entry Points\n\n")
+    report_file.write("Issues that are safe, scoped, and ready for a community contribution.\n\n")
+
+    entry_points = [issue for issue in issues if _is_entry_point(issue)]
+    entry_points = sorted(entry_points, key=lambda issue: issue.get("priority_score", 0), reverse=True)[:8]
+
+    if not entry_points:
+        report_file.write("> No contributor entry points identified this week.\n\n")
+        return
+
+    report_file.write("| Issue | Title | Why | Confidence | Priority | Age | Type |\n")
+    report_file.write("|-------|-------|-----|------------|----------|-----|------|\n")
+
+    for issue in entry_points:
+        title = issue["title"][:45] + "..." if len(issue["title"]) > 45 else issue["title"]
+        issue_type = "📚" if issue.get("label_types", {}).get("documentation") else (
+            "🐛" if issue.get("label_types", {}).get("bug") else "✨"
+        )
+        report_file.write(
+            f"| [#{issue['number']}]({issue['url']}) | {title} | {_entry_point_reason(issue)} | "
+            f"{issue.get('confidence_band', 'EXCLUDED')} ({issue.get('confidence', 0):.1f}%) | "
+            f"{issue.get('priority_score', 0):.0f} | {format_age(issue.get('age_days', 0))} | {issue_type} |\n"
         )
 
     report_file.write("\n")
@@ -414,6 +487,17 @@ def write_issue_row(report_file: TextIO, issue: Dict[str, Any]) -> None:
         type_icon = "✨"
     elif issue.get("label_types", {}).get("documentation"):
         type_icon = "📚"
+
+    if issue.get("is_exempt"):
+        type_icon = f"{type_icon} 🚫".strip()
+    if issue.get("is_upstream"):
+        type_icon = f"{type_icon} ⛔".strip()
+    if issue.get("is_crash"):
+        type_icon = f"{type_icon} 🔴".strip()
+    if issue.get("is_breaking_change"):
+        type_icon = f"{type_icon} 💥".strip()
+    if issue.get("is_new_resource"):
+        type_icon = f"{type_icon} 🆕".strip()
 
     status_icons: List[str] = []
     if issue.get("is_assigned"):

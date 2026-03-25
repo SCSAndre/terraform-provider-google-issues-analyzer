@@ -4,27 +4,42 @@ HTML Report Generator for Terraform Issues Analyzer.
 Generates professional HTML reports with interactive charts and styling.
 """
 
+import json
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional, Union
 
 from config import HIGH_CONFIDENCE_THRESHOLD, MEDIUM_CONFIDENCE_THRESHOLD, MIN_CONFIDENCE_THRESHOLD
 from types_definitions import IssueData
 from utils import format_age
 
 
-def generate_html_report(issues: List[IssueData], output_dir: Path) -> Path:
+def generate_html_report(
+    issues: List[IssueData],
+    output_dir: Optional[Path] = None,
+    history: Optional[List[Dict[str, Any]]] = None,
+) -> Union[Path, str]:
     """Generate an HTML report from the analyzed issues."""
-    output_path = output_dir / "terraform_issues_report.html"
-    history = load_history(output_dir / "history.json")
+    resolved_history = history
+    if resolved_history is None:
+        if output_dir is not None:
+            resolved_history = load_history(output_dir / "history.json")
+        else:
+            resolved_history = []
 
     # Calculate statistics
     stats = calculate_statistics(issues)
-    stats["history"] = history
+    stats["history"] = resolved_history
     generic_issues: List[Dict[str, Any]] = [dict(issue) for issue in issues]
+    html_content = generate_html_content(generic_issues, stats)
+
+    if output_dir is None:
+        return html_content
+
+    output_path = output_dir / "terraform_issues_report.html"
 
     with open(output_path, 'w', encoding='utf-8') as f:
-        f.write(generate_html_content(generic_issues, stats))
+        f.write(html_content)
 
     return output_path
 
@@ -42,8 +57,6 @@ def load_history(history_path: Path) -> List[Dict[str, Any]]:
         return []
 
     try:
-        import json
-
         with open(history_path, "r", encoding="utf-8") as history_file:
             parsed = json.load(history_file)
             if isinstance(parsed, list):
@@ -98,6 +111,84 @@ def _is_recaptcha_issue(issue: Dict[str, Any]) -> bool:
     )
 
 
+def _is_contributor_safe(issue: Dict[str, Any]) -> bool:
+    """Return True when issue is safe to present as a contributor entry point."""
+    return not issue.get("is_blocked", False)
+
+
+def _is_entry_point(issue: Dict[str, Any]) -> bool:
+    """Return True if this issue qualifies as a contributor entry point."""
+    if issue.get("confidence_band") != "HIGH":
+        return False
+    if issue.get("is_blocked", False):
+        return False
+    labels = [label.lower() for label in issue.get("labels", [])]
+    if "breaking-change" in labels:
+        return False
+    lt = issue.get("label_types", {})
+    if "new-resource" in labels or lt.get("new_resource", False):
+        return False
+    has_effort_signal = (
+        any(size in labels for size in ("size/xs", "size/s"))
+        or lt.get("has_pr", False)
+        or lt.get("documentation", False)
+    )
+    if not has_effort_signal:
+        return False
+    return issue.get("is_internally_tracked", False) or issue.get("priority_score", 0) >= 65
+
+
+def _get_entry_point_reason(issue: Dict[str, Any]) -> str:
+    """Return short qualifier text for contributor entry points."""
+    labels = [label.lower() for label in issue.get("labels", [])]
+    lt = issue.get("label_types", {})
+    if lt.get("has_pr", False):
+        return "Finish existing PR"
+    if lt.get("documentation", False):
+        return "Docs fix"
+    if "size/xs" in labels:
+        return "Tiny scope (xs)"
+    if "size/s" in labels:
+        return "Small scope (s)"
+    return "Actionable"
+
+
+def _get_blocking_badges(issue: Dict[str, Any]) -> List[str]:
+    """Return blocking badges for issues with permanent external blockers."""
+    badges: List[str] = []
+    if issue.get("is_crash"):
+        badges.append(
+            '<span class="badge badge-crash" title="This issue causes a crash or panic">🔴 Crash</span>'
+        )
+    if issue.get("is_breaking_change"):
+        badges.append(
+            '<span class="badge badge-breaking" title="Requires a breaking change - major version bump needed">💥 Breaking</span>'
+        )
+    if issue.get("is_new_resource"):
+        badges.append(
+            '<span class="badge badge-new-resource" title="Requires implementing a new Terraform resource from scratch">🆕 New Resource</span>'
+        )
+    if issue.get("is_exempt"):
+        badges.append(
+            '<span class="badge badge-exempt" title="HashiCorp will not fix - depends on upstream GCP API">🚫 Exempt</span>'
+        )
+    if issue.get("is_upstream"):
+        badges.append(
+            '<span class="badge badge-upstream" title="Blocked on GCP API - Terraform fix not possible until Google acts">⛔ GCP Blocked</span>'
+        )
+    return badges
+
+
+def _get_tracking_badges(issue: Dict[str, Any]) -> List[str]:
+    """Return ownership badges that indicate internal tracking state."""
+    badges: List[str] = []
+    if issue.get("is_internally_tracked"):
+        badges.append(
+            '<span class="badge badge-tracked" title="Tracked in HashiCorp internal backlog">🔖 Tracked</span>'
+        )
+    return badges
+
+
 def _get_recently_reactivated_issues(issues: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """Return recently reactivated issues using report-specific business rules."""
     reactivated = [
@@ -123,7 +214,8 @@ def calculate_statistics(issues: List[IssueData]) -> Dict[str, Any]:
     if total == 0:
         return {
             'total': 0, 'bugs': 0, 'enhancements': 0, 'assigned': 0,
-            'avg_age': 0, 'avg_comments': 0, 'active': 0, 'stale': 0, 'has_pr': 0,
+            'tracked': 0, 'orphaned': 0,
+            'avg_age': 0, 'avg_comments': 0, 'active': 0, 'active_week': 0, 'stale': 0, 'has_pr': 0,
             'age_distribution': [0, 0, 0, 0, 0, 0],
             'categories': {}
         }
@@ -131,9 +223,18 @@ def calculate_statistics(issues: List[IssueData]) -> Dict[str, Any]:
     bugs = sum(1 for i in issues if i.get("label_types", {}).get("bug"))
     enhancements = sum(1 for i in issues if i.get("label_types", {}).get("enhancement"))
     assigned = sum(1 for i in issues if i.get("is_assigned"))
+    tracked = sum(1 for i in issues if i.get("is_internally_tracked", False))
+    orphaned = sum(
+        1
+        for i in issues
+        if not i.get("is_internally_tracked", False)
+        and not i.get("is_blocked", False)
+        and not i.get("label_types", {}).get("has_pr", False)
+    )
     avg_age = sum(i.get("age_days", 0) for i in issues) / total
     avg_comments = sum(i.get("comments", 0) for i in issues) / total
     active = sum(1 for i in issues if i.get("days_since_update", 0) < 30)
+    active_week = sum(1 for i in issues if i.get("days_since_update", 0) < 7)
     stale = sum(1 for i in issues if i.get("days_since_update", 0) > 180)
     has_pr = sum(1 for i in issues if i.get("label_types", {}).get("has_pr"))
     
@@ -166,9 +267,12 @@ def calculate_statistics(issues: List[IssueData]) -> Dict[str, Any]:
         'bugs': bugs,
         'enhancements': enhancements,
         'assigned': assigned,
+        'tracked': tracked,
+        'orphaned': orphaned,
         'avg_age': avg_age,
         'avg_comments': avg_comments,
         'active': active,
+        'active_week': active_week,
         'stale': stale,
         'has_pr': has_pr,
         'age_distribution': age_ranges,
@@ -223,10 +327,14 @@ def generate_html_content(issues: List[Dict[str, Any]], stats: Dict[str, Any]) -
         </header>
 
         {generate_executive_summary_html(stats)}
+
+        {generate_backlog_trend_html(stats.get('history', []))}
         
         <div class="charts-row">
             {generate_charts_html(stats)}
         </div>
+
+        {generate_contributor_entry_points_html(issues)}
 
         <div class="report-toggle-row">
             <button id="issues-band-toggle-global" class="issues-toggle-button" type="button">Showing all issues  ▾</button>
@@ -367,6 +475,25 @@ def get_css_styles() -> str:
         .stat-card.enhancements .value { color: var(--success-color); }
         .stat-card.stale .value { color: var(--warning-color); }
         .stat-card.active .value { color: var(--info-color); }
+        .stat-card.has-pr .value { color: var(--success-color); }
+        .stat-card.active-week .value { color: var(--primary-color); }
+        .stat-card.active-week-zero .value { color: var(--text-muted); }
+        .stat-card.orphaned-warning .value { color: #b45309; }
+
+        .trend-placeholder {
+            text-align: center;
+            color: #94a3b8;
+            font-style: italic;
+            padding: 2rem;
+        }
+
+        .trend-chart-wrapper {
+            height: 220px;
+        }
+
+        .entry-points-card {
+            border-left: 4px solid #22c55e;
+        }
         
         .charts-row {
             display: grid;
@@ -453,6 +580,44 @@ def get_css_styles() -> str:
         .badge-pr {
             background: #f3e8ff;
             color: var(--primary-color);
+        }
+
+        .badge-tracked {
+            background: #eff6ff;
+            color: #1e40af;
+            border: 1px solid #bfdbfe;
+        }
+
+        .badge-crash {
+            background: #fef2f2;
+            color: #7f1d1d;
+            border: 1px solid #fca5a5;
+            font-weight: 700;
+        }
+
+        .badge-breaking {
+            background: #fff1f2;
+            color: #9f1239;
+            border: 1px solid #fda4af;
+            font-weight: 700;
+        }
+
+        .badge-new-resource {
+            background: #f0fdf4;
+            color: #166534;
+            border: 1px solid #86efac;
+        }
+
+        .badge-exempt {
+            background: #fee2e2;
+            color: #991b1b;
+            border: 1px solid #fca5a5;
+        }
+
+        .badge-upstream {
+            background: #fef9c3;
+            color: #854d0e;
+            border: 1px solid #fde047;
         }
 
         .badge-confidence-high {
@@ -659,7 +824,14 @@ def generate_executive_summary_html(stats: Dict[str, Any]) -> str:
     total = stats['total']
     bugs_pct = (stats['bugs'] / total * 100) if total else 0
     enh_pct = (stats['enhancements'] / total * 100) if total else 0
-    assigned_pct = (stats['assigned'] / total * 100) if total else 0
+    tracked = stats.get('tracked', 0)
+    orphaned = stats.get('orphaned', 0)
+    has_pr_count = stats.get('has_pr', 0)
+    active_week_count = stats.get('active_week', 0)
+    tracked_pct = (tracked / total * 100) if total else 0
+    orphaned_card_class = "stat-card orphaned-warning" if orphaned > 20 else "stat-card"
+    has_pr_card_class = "stat-card has-pr" if has_pr_count > 0 else "stat-card"
+    active_week_card_class = "stat-card active-week" if active_week_count > 0 else "stat-card active-week-zero"
     
     return f'''
         <div class="card">
@@ -678,29 +850,51 @@ def generate_executive_summary_html(stats: Dict[str, Any]) -> str:
                     <div class="label">✨ Enhancements ({enh_pct:.0f}%)</div>
                 </div>
                 <div class="stat-card">
-                    <div class="value">{stats['assigned']}</div>
-                    <div class="label">👤 Assigned ({assigned_pct:.0f}%)</div>
+                    <div class="value">{tracked}</div>
+                    <div class="label">🔖 Tracked ({tracked_pct:.0f}%)<br><small>HashiCorp backlog</small></div>
+                </div>
+                <div class="{orphaned_card_class}">
+                    <div class="value">{orphaned}</div>
+                    <div class="label">👻 Orphaned<br><small>Needs a champion</small></div>
                 </div>
                 <div class="stat-card">
                     <div class="value">{format_age(int(stats['avg_age']))}</div>
                     <div class="label">📅 Avg Age</div>
                 </div>
-                <div class="stat-card">
-                    <div class="value">{stats['avg_comments']:.1f}</div>
-                    <div class="label">💬 Avg Comments</div>
+                <div class="{has_pr_card_class}">
+                    <div class="value">{has_pr_count}</div>
+                    <div class="label">🔗 Has PR<br><small>Work already started</small></div>
                 </div>
                 <div class="stat-card active">
                     <div class="value">{stats['active']}</div>
                     <div class="label">🔥 Active (&lt;30d)</div>
                 </div>
+                <div class="{active_week_card_class}">
+                    <div class="value">{active_week_count}</div>
+                    <div class="label">⚡ Active<br><small>Updated last 7 days</small></div>
+                </div>
                 <div class="stat-card stale">
                     <div class="value">{stats['stale']}</div>
                     <div class="label">💤 Stale (&gt;180d)</div>
                 </div>
-                <div class="stat-card">
-                    <div class="value">{stats['has_pr']}</div>
-                    <div class="label">🔗 Has PR</div>
-                </div>
+            </div>
+        </div>'''
+
+
+def generate_backlog_trend_html(history: List[Dict[str, Any]]) -> str:
+    """Generate backlog trend section using historical snapshots."""
+    if len(history) < 2:
+        return '''
+        <div class="card">
+            <h3>📈 Backlog Trend</h3>
+            <p class="trend-placeholder">Trend data will appear after 2+ report runs.</p>
+        </div>'''
+
+    return '''
+        <div class="card">
+            <h3>📈 Backlog Trend</h3>
+            <div class="trend-chart-wrapper">
+                <canvas id="trendChart"></canvas>
             </div>
         </div>'''
 
@@ -749,15 +943,6 @@ def generate_charts_html(stats: Dict[str, Any]) -> str:
                 </table>
             </noscript>
         </div>
-        <div class="chart-container">
-            <h3>📈 Issue Trend</h3>
-            <canvas id="trendChart"></canvas>
-            <noscript>
-                <table>
-                    <thead><tr><th>Date</th><th>Total</th><th>High</th><th>Review</th></tr></thead>
-                    <tbody>{history_rows}</tbody>
-                </table>
-            </noscript>
         </div>'''.format(
         age_0=stats["age_distribution"][0],
         age_1=stats["age_distribution"][1],
@@ -789,7 +974,12 @@ def generate_quick_wins_html(issues: List[Dict[str, Any]]) -> str:
             reason.append("Good First Issue")
         reason_str = ", ".join(reason) if reason else "Low Complexity"
         
-        type_badge = '<span class="badge badge-bug">🐛 Bug</span>' if issue.get("label_types", {}).get("bug") else '<span class="badge badge-enhancement">✨ Enhancement</span>'
+        type_badges = [
+            '<span class="badge badge-bug">🐛 Bug</span>'
+            if issue.get("label_types", {}).get("bug")
+            else '<span class="badge badge-enhancement">✨ Enhancement</span>'
+        ]
+        type_badges.extend(_get_blocking_badges(issue))
         
         rows += f'''
             <tr data-band="{confidence_band}">
@@ -799,7 +989,7 @@ def generate_quick_wins_html(issues: List[Dict[str, Any]]) -> str:
                 <td>{get_confidence_badge(issue.get('confidence', 0))}</td>
                 <td>{reason_str}</td>
                 <td>{format_age(issue.get('age_days', 0))}</td>
-                <td>{type_badge}</td>
+                <td>{' '.join(type_badges)}</td>
             </tr>'''
     
     return f'''
@@ -825,6 +1015,70 @@ def generate_quick_wins_html(issues: List[Dict[str, Any]]) -> str:
         </div>'''
 
 
+def generate_contributor_entry_points_html(issues: List[Dict[str, Any]]) -> str:
+    """Generate curated contributor entry points section."""
+    entry_points = [issue for issue in issues if _is_entry_point(issue)]
+    entry_points = sorted(entry_points, key=lambda issue: issue.get("priority_score", 0), reverse=True)[:8]
+
+    if not entry_points:
+        return '''
+        <div class="card entry-points-card">
+            <h3>✅ 🎯 Contributor Entry Points</h3>
+            <p style="color: var(--text-muted); margin-bottom: 1rem;">Issues that are safe, scoped, and ready for a community contribution</p>
+            <p>No entry-point issues identified this week.</p>
+        </div>'''
+
+    rows = ''
+    for issue in entry_points:
+        title = issue['title'][:60] + '...' if len(issue['title']) > 60 else issue['title']
+        confidence_band = get_issue_confidence_band(issue)
+        subcategory_badge = '<span class="subcategory-badge recaptcha-badge">🔑 reCAPTCHA</span>' if _is_recaptcha_issue(issue) else ''
+        why = _get_entry_point_reason(issue)
+
+        type_badges = [
+            '<span class="badge badge-bug">🐛 Bug</span>'
+            if issue.get("label_types", {}).get("bug")
+            else '<span class="badge badge-enhancement">✨ Enhancement</span>'
+        ]
+        if issue.get("label_types", {}).get("documentation"):
+            type_badges = ['<span class="badge badge-enhancement">📚 Docs</span>']
+        type_badges.extend(_get_tracking_badges(issue))
+        type_badges.extend(_get_blocking_badges(issue))
+
+        rows += f'''
+            <tr data-band="{confidence_band}">
+                <td><a href="{issue['url']}" target="_blank">#{issue['number']}</a></td>
+                <td>{title}{subcategory_badge}</td>
+                <td>{why}</td>
+                <td>{get_confidence_badge(issue.get('confidence', 0))}</td>
+                <td>{issue.get('priority_score', 0):.0f}</td>
+                <td>{format_age(issue.get('age_days', 0))}</td>
+                <td>{' '.join(type_badges)}</td>
+            </tr>'''
+
+    return f'''
+        <div class="card entry-points-card">
+            <h3>✅ 🎯 Contributor Entry Points</h3>
+            <p style="color: var(--text-muted); margin-bottom: 1rem;">Issues that are safe, scoped, and ready for a community contribution</p>
+            <table id="entry-points-table">
+                <thead>
+                    <tr>
+                        <th>Issue</th>
+                        <th>Title</th>
+                        <th>Why</th>
+                        <th>Confidence</th>
+                        <th>Priority</th>
+                        <th>Age</th>
+                        <th>Type</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {rows}
+                </tbody>
+            </table>
+        </div>'''
+
+
 def generate_attention_needed_html(issues: List[Dict[str, Any]]) -> str:
     """Generate the attention needed section."""
     if not issues:
@@ -835,7 +1089,12 @@ def generate_attention_needed_html(issues: List[Dict[str, Any]]) -> str:
         title = issue['title'][:60] + '...' if len(issue['title']) > 60 else issue['title']
         confidence_band = get_issue_confidence_band(issue)
         subcategory_badge = '<span class="subcategory-badge recaptcha-badge">🔑 reCAPTCHA</span>' if _is_recaptcha_issue(issue) else ''
-        type_badge = '<span class="badge badge-bug">🐛 Bug</span>' if issue.get("label_types", {}).get("bug") else '<span class="badge badge-enhancement">✨ Enhancement</span>'
+        type_badges = [
+            '<span class="badge badge-bug">🐛 Bug</span>'
+            if issue.get("label_types", {}).get("bug")
+            else '<span class="badge badge-enhancement">✨ Enhancement</span>'
+        ]
+        type_badges.extend(_get_blocking_badges(issue))
         
         rows += f'''
             <tr data-band="{confidence_band}">
@@ -845,7 +1104,7 @@ def generate_attention_needed_html(issues: List[Dict[str, Any]]) -> str:
                 <td>{get_confidence_badge(issue.get('confidence', 0))}</td>
                 <td>{issue.get('comments', 0)}</td>
                 <td>{format_age(issue.get('days_since_update', 0))} ago</td>
-                <td>{type_badge}</td>
+                <td>{' '.join(type_badges)}</td>
             </tr>'''
     
     return f'''
@@ -891,6 +1150,7 @@ def generate_top_issues_html(issues: List[Dict[str, Any]]) -> str:
             badges.append('<span class="badge badge-active">🔥 Active</span>')
         if issue.get("label_types", {}).get("has_pr"):
             badges.append('<span class="badge badge-pr">🔗 PR</span>')
+        badges.extend(_get_blocking_badges(issue))
         
         badges_html = ' '.join(badges)
         
@@ -940,7 +1200,12 @@ def generate_recently_reactivated_html(issues: List[Dict[str, Any]]) -> str:
     for issue in reactivated_issues:
         title = issue['title'][:60] + '...' if len(issue['title']) > 60 else issue['title']
         confidence_band = get_issue_confidence_band(issue)
-        type_badge = '<span class="badge badge-bug">🐛 Bug</span>' if issue.get("label_types", {}).get("bug") else '<span class="badge badge-enhancement">✨ Enhancement</span>'
+        type_badges = [
+            '<span class="badge badge-bug">🐛 Bug</span>'
+            if issue.get("label_types", {}).get("bug")
+            else '<span class="badge badge-enhancement">✨ Enhancement</span>'
+        ]
+        type_badges.extend(_get_blocking_badges(issue))
 
         rows += f'''
             <tr data-band="{confidence_band}">
@@ -950,7 +1215,7 @@ def generate_recently_reactivated_html(issues: List[Dict[str, Any]]) -> str:
                 <td>{get_confidence_badge(issue.get('confidence', 0))}</td>
                 <td>{format_age(issue.get('age_days', 0))}</td>
                 <td>{format_age(issue.get('days_since_update', 0))} ago</td>
-                <td>{type_badge}</td>
+                <td>{' '.join(type_badges)}</td>
             </tr>'''
 
     if not rows:
@@ -1008,13 +1273,15 @@ def generate_category_sections_html(by_category: Dict[str, List[Dict[str, Any]]]
             confidence_band = get_issue_confidence_band(issue)
             subcategory_badge = '<span class="subcategory-badge recaptcha-badge">🔑 reCAPTCHA</span>' if _is_recaptcha_issue(issue) else ''
             
-            type_icon = ''
+            type_badges: List[str] = []
             if issue.get("label_types", {}).get("bug"):
-                type_icon = '🐛'
+                type_badges.append('<span class="badge badge-bug">🐛 Bug</span>')
             elif issue.get("label_types", {}).get("enhancement"):
-                type_icon = '✨'
+                type_badges.append('<span class="badge badge-enhancement">✨ Enhancement</span>')
             elif issue.get("label_types", {}).get("documentation"):
-                type_icon = '📚'
+                type_badges.append('<span class="badge badge-enhancement">📚 Docs</span>')
+            type_badges.extend(_get_tracking_badges(issue))
+            type_badges.extend(_get_blocking_badges(issue))
             
             status_icons = []
             if issue.get("days_since_update", 0) > 180:
@@ -1037,7 +1304,7 @@ def generate_category_sections_html(by_category: Dict[str, List[Dict[str, Any]]]
                     <td>{get_confidence_badge(issue.get('confidence', 0))}</td>
                     <td>{format_age(issue.get('age_days', 0))}</td>
                     <td>{format_age(issue.get('days_since_update', 0))} ago {status_html}</td>
-                    <td>{type_icon}</td>
+                    <td>{' '.join(type_badges)}</td>
                 </tr>'''
         
         sections += f'''
@@ -1083,12 +1350,12 @@ def get_chart_scripts(stats: Dict[str, Any]) -> str:
     cat_bugs = [stats['categories'][c]['bugs'] for c in cat_labels]
     cat_enhancements = [stats['categories'][c]['enhancements'] for c in cat_labels]
     history = stats.get('history', [])
-    trend_labels = [row.get('date', '') for row in history]
-    trend_totals = [row.get('total', 0) for row in history]
+    trend_data = json.dumps(history)
     
     return f'''
     <script>
         let highOnlyMode = false;
+        const trendData = {trend_data};
 
         function updateToggleLabels() {{
             const text = highOnlyMode ? 'HIGH confidence only  ▾' : 'Showing all issues  ▾';
@@ -1239,27 +1506,64 @@ def get_chart_scripts(stats: Dict[str, Any]) -> str:
             }}
         }});
 
-        // Trend Chart
+        // Backlog Trend Chart
         const trendCanvas = document.getElementById('trendChart');
-        if (trendCanvas) {{
+        if (trendCanvas && trendData.length >= 2) {{
             const trendCtx = trendCanvas.getContext('2d');
+            const trendLabels = trendData.map((row) => row.date || '');
+            const totalSeries = trendData.map((row) => row.total || 0);
+            const highSeries = trendData.map((row) => row.high_confidence || 0);
+            const reviewSeries = trendData.map((row) => row.review || 0);
             new Chart(trendCtx, {{
                 type: 'line',
                 data: {{
-                    labels: {trend_labels},
-                    datasets: [{{
-                        label: 'Total Issues',
-                        data: {trend_totals},
-                        borderColor: '#7c3aed',
-                        backgroundColor: 'rgba(124, 58, 237, 0.2)',
-                        fill: true,
-                        tension: 0.2
-                    }}]
+                    labels: trendLabels,
+                    datasets: [
+                        {{
+                            label: 'Total Issues',
+                            data: totalSeries,
+                            borderColor: '#7c3aed',
+                            backgroundColor: 'rgba(124, 58, 237, 0.08)',
+                            pointRadius: 4,
+                            tension: 0.3,
+                            fill: false
+                        }},
+                        {{
+                            label: 'HIGH Confidence',
+                            data: highSeries,
+                            borderColor: '#22c55e',
+                            backgroundColor: 'rgba(34, 197, 94, 0.08)',
+                            pointRadius: 4,
+                            tension: 0.3,
+                            fill: false
+                        }},
+                        {{
+                            label: 'REVIEW Confidence',
+                            data: reviewSeries,
+                            borderColor: '#f59e0b',
+                            backgroundColor: 'rgba(245, 158, 11, 0.08)',
+                            pointRadius: 4,
+                            tension: 0.3,
+                            fill: false
+                        }}
+                    ]
                 }},
                 options: {{
                     responsive: true,
-                    plugins: {{ legend: {{ display: true }} }},
-                    scales: {{ y: {{ beginAtZero: true }} }}
+                    maintainAspectRatio: false,
+                    plugins: {{
+                        legend: {{
+                            position: 'bottom'
+                        }}
+                    }},
+                    scales: {{
+                        y: {{
+                            beginAtZero: false,
+                            ticks: {{
+                                stepSize: 1
+                            }}
+                        }}
+                    }}
                 }}
             }});
         }}

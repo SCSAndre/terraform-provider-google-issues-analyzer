@@ -18,6 +18,235 @@ from html_report_generator import (
 )
 
 
+def make_base_issue() -> dict:
+    """Return a minimal issue payload for badge rendering tests."""
+    return {
+        'number': 901,
+        'title': 'Blocking label test issue',
+        'url': 'https://github.com/test/901',
+        'category': 'Cloud Armor',
+        'confidence': 88.0,
+        'confidence_band': 'HIGH',
+        'label_types': {'bug': True},
+        'is_assigned': False,
+        'age_days': 120,
+        'days_since_update': 20,
+        'comments': 1,
+        'priority_score': 70.0,
+        'labels': ['bug'],
+        'created_at': '2025-01-01T00:00:00Z',
+        'updated_at': '2025-10-01T00:00:00Z',
+        'assignees': [],
+        'related_categories': [],
+        'is_exempt': False,
+        'is_upstream': False,
+        'is_blocked': False,
+        'is_crash': False,
+        'is_breaking_change': False,
+        'is_new_resource': False,
+        'is_internally_tracked': False,
+    }
+
+
+def make_entry_point_issue() -> dict:
+    """Return a HIGH-confidence issue that qualifies for entry points."""
+    issue = make_base_issue()
+    issue['number'] = 902
+    issue['title'] = 'Contributor-friendly docs update for Cloud Armor'
+    issue['labels'] = ['size/s', 'documentation']
+    issue['label_types'] = {
+        'bug': False,
+        'documentation': True,
+        'has_pr': False,
+        'breaking_change': False,
+    }
+    issue['confidence_band'] = 'HIGH'
+    issue['is_blocked'] = False
+    issue['is_internally_tracked'] = False
+    issue['priority_score'] = 72.0
+    return issue
+
+
+def _parse_entry_points_section(html: str) -> str:
+    """Extract contributor entry points section content for targeted assertions."""
+    section_start = html.find("Contributor Entry Points")
+    if section_start == -1:
+        return ""
+    section_end = html.find("Quick Wins", section_start)
+    if section_end == -1:
+        section_end = len(html)
+    return html[section_start:section_end]
+
+
+def test_exempt_badge_rendered():
+    issue = make_base_issue()
+    issue["is_exempt"] = True
+    issue["is_upstream"] = False
+    issue["is_blocked"] = True
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        output_path = generate_html_report([issue], Path(temp_dir))
+        html = output_path.read_text()
+
+    assert "badge-exempt" in html
+    assert "🚫" in html
+
+
+def test_upstream_badge_rendered():
+    issue = make_base_issue()
+    issue["is_exempt"] = False
+    issue["is_upstream"] = True
+    issue["is_blocked"] = True
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        output_path = generate_html_report([issue], Path(temp_dir))
+        html = output_path.read_text()
+
+    assert "badge-upstream" in html
+    assert "⛔" in html
+
+
+def test_crash_badge_rendered():
+    issue = make_base_issue()
+    issue["is_crash"] = True
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        output_path = generate_html_report([issue], Path(temp_dir))
+        html = output_path.read_text()
+
+    assert "badge-crash" in html
+    assert "🔴 Crash" in html
+
+
+def test_breaking_change_badge_rendered():
+    issue = make_base_issue()
+    issue["is_breaking_change"] = True
+    issue["is_new_resource"] = False
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        output_path = generate_html_report([issue], Path(temp_dir))
+        html = output_path.read_text()
+
+    assert "badge-breaking" in html
+    assert "💥 Breaking" in html
+
+
+def test_new_resource_badge_rendered():
+    issue = make_base_issue()
+    issue["is_breaking_change"] = False
+    issue["is_new_resource"] = True
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        output_path = generate_html_report([issue], Path(temp_dir))
+        html = output_path.read_text()
+
+    assert "badge-new-resource" in html
+    assert "🆕 New Resource" in html
+
+
+def test_tracked_badge_rendered():
+    issue = make_base_issue()
+    issue["is_internally_tracked"] = True
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        output_path = generate_html_report([issue], Path(temp_dir))
+        html = output_path.read_text()
+
+    assert "badge-tracked" in html
+    assert "🔖" in html
+
+
+def test_executive_summary_has_tracked_card():
+    issue = make_base_issue()
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        output_path = generate_html_report([issue], Path(temp_dir))
+        html = output_path.read_text()
+
+    assert "Tracked" in html
+    assert "Orphaned" in html
+
+
+def test_has_pr_card_present():
+    issue = make_base_issue()
+    issue["label_types"] = {"has_pr": True}
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        output_path = generate_html_report([issue], Path(temp_dir))
+        html = output_path.read_text()
+
+    assert "Has PR" in html
+
+
+def test_active_card_present():
+    issue = make_base_issue()
+    issue["days_since_update"] = 3
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        output_path = generate_html_report([issue], Path(temp_dir))
+        html = output_path.read_text()
+
+    assert "Active" in html
+
+
+def test_trend_chart_rendered_with_history():
+    history = [
+        {"date": "2026-03-17", "total": 33, "high_confidence": 26, "review": 7},
+        {"date": "2026-03-23", "total": 31, "high_confidence": 25, "review": 6},
+    ]
+    html = generate_html_report([make_base_issue()], history=history)
+
+    assert "trendChart" in html
+    assert "2026-03-17" in html
+    assert "HIGH Confidence" in html
+
+
+def test_trend_placeholder_with_single_entry():
+    history = [{"date": "2026-03-23", "total": 31, "high_confidence": 25, "review": 6}]
+    html = generate_html_report([make_base_issue()], history=history)
+
+    assert "trend-placeholder" in html
+    assert '<canvas id="trendChart">' not in html
+
+
+def test_trend_placeholder_with_no_history():
+    html = generate_html_report([make_base_issue()], history=[])
+
+    assert "trend-placeholder" in html
+
+
+def test_entry_points_section_present():
+    issue = make_entry_point_issue()
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        output_path = generate_html_report([issue], Path(temp_dir))
+        html = output_path.read_text()
+
+    assert "Contributor Entry Points" in html
+
+
+def test_blocked_issue_excluded_from_entry_points():
+    issue = make_entry_point_issue()
+    issue["is_blocked"] = True
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        output_path = generate_html_report([issue], Path(temp_dir))
+        html = output_path.read_text()
+
+    assert "No entry-point issues" in html or issue["title"] not in _parse_entry_points_section(html)
+
+
+def test_breaking_change_excluded_from_entry_points():
+    issue = make_entry_point_issue()
+    issue["labels"] = ["breaking-change", "size/s"]
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        output_path = generate_html_report([issue], Path(temp_dir))
+        html = output_path.read_text()
+
+    assert "No entry-point issues" in html or issue["title"] not in _parse_entry_points_section(html)
+
+
 class TestFormatAge(unittest.TestCase):
     """Test the format_age helper function."""
     
@@ -173,12 +402,13 @@ class TestGenerateHtmlReport(unittest.TestCase):
         self.assertIn('Load Balancers', content)
 
     def test_html_contains_confidence_and_trend_elements(self):
-        """Test confidence badges and trend chart are rendered."""
+        """Test confidence badges and trend section are rendered."""
         output_path = generate_html_report(self.sample_issues, Path(self.temp_dir))
         content = output_path.read_text()
 
         self.assertIn('Confidence', content)
-        self.assertIn('trendChart', content)
+        self.assertIn('Backlog Trend', content)
+        self.assertIn('trend-placeholder', content)
 
 
 class TestHtmlHelpers(unittest.TestCase):
@@ -197,7 +427,6 @@ class TestHtmlHelpers(unittest.TestCase):
         html = generate_charts_html(stats)
         self.assertIn('<noscript>', html)
         self.assertIn('Category', html)
-        self.assertIn('Issue Trend', html)
 
 
 class TestHtmlSections(unittest.TestCase):

@@ -28,6 +28,13 @@ class IssueData(TypedDict):
     comments: int
     labels: List[str]
     label_types: LabelTypes
+    is_exempt: bool
+    is_upstream: bool
+    is_blocked: bool
+    is_crash: bool
+    is_breaking_change: bool
+    is_new_resource: bool
+    is_internally_tracked: bool
     assignees: List[str]
     is_assigned: bool
     actionable: bool

@@ -19,6 +19,28 @@ from service_definitions import get_service_terms, get_critical_keywords
 logger = logging.getLogger(__name__)
 
 
+def get_blocking_label_info(labels: List[str]) -> Dict[str, bool]:
+    """Return blocking signal flags derived from GitHub label names.
+
+    Args:
+        labels: List of lowercase label name strings.
+
+    Returns:
+        Dict with keys:
+            'is_exempt'   — True if forward/exempt is present
+            'is_upstream' — True if upstream is present
+            'is_blocked'  — True if either is present
+    """
+    lower = [label.lower() for label in labels]
+    is_exempt = "forward/exempt" in lower
+    is_upstream = "upstream" in lower
+    return {
+        "is_exempt": is_exempt,
+        "is_upstream": is_upstream,
+        "is_blocked": is_exempt or is_upstream,
+    }
+
+
 def classify_labels(labels: List[str]) -> Dict[str, bool]:
     """Classify labels into semantic types.
 

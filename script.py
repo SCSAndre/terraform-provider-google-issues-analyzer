@@ -39,6 +39,7 @@ from config import (
 from github_client import GitHubClient
 from issue_classifier import IssueClassifier
 from issue_classifier import classify_labels
+from issue_classifier import get_blocking_label_info
 from availability_checker import AvailabilityChecker
 import report_generator
 from exceptions import (
@@ -302,6 +303,11 @@ def analyze_issues(
         # Extract label types
         labels = [label["name"] for label in issue.get("labels", [])]
         label_types = classify_labels(labels)
+        blocking_info = get_blocking_label_info(labels)
+        is_crash = "crash" in [label.lower() for label in labels]
+        is_breaking_change = "breaking-change" in [label.lower() for label in labels]
+        is_new_resource = "new-resource" in [label.lower() for label in labels]
+        is_internally_tracked = "forward/linked" in [label.lower() for label in labels]
         is_actionable = label_types.get("actionable", False)
         
         # Get assignees
@@ -341,6 +347,13 @@ def analyze_issues(
             "thumbs_up": thumbs_up,
             "labels": labels,
             "label_types": label_types,
+            "is_exempt": blocking_info["is_exempt"],
+            "is_upstream": blocking_info["is_upstream"],
+            "is_blocked": blocking_info["is_blocked"],
+            "is_crash": is_crash,
+            "is_breaking_change": is_breaking_change,
+            "is_new_resource": is_new_resource,
+            "is_internally_tracked": is_internally_tracked,
             "assignees": assignees,
             "is_assigned": len(assignees) > 0,
             "actionable": is_actionable,
@@ -383,8 +396,12 @@ def calculate_priority_score(
     - Comments: 15 points max
     - Reactions: 15 points max
     - Neglect (age + staleness): 20 points max
+    - ultra-age bonus: +3 to +8 for issues older than 3 years
     - reactivation: old issue (>1y) with recent activity (<90d), max +15
     - Bug bonus: 5 points
+    - Breaking change penalty: -5 points
+    - New resource penalty: -3 points
+    - crash bonus: +15 points when issue has the "crash" label
     - Actionable bonus: 5 points
     - size: maintainer effort estimate label (size/xs=+12, size/s=+10, size/m=+5)
     - Unassigned bonus: 10 points
@@ -424,6 +441,15 @@ def calculate_priority_score(
     neglect_days = min((age_days * 0.3) + (days_since_update * 0.7), 730)
     score += (neglect_days / 730) * 20
 
+    # Ultra-age bonus: issues that have survived multiple major releases
+    # deserve extra visibility. Soft bonus to avoid over-penalizing new issues.
+    ultra_age_bonus = 0
+    if age_days > 1095:  # > 3 years
+        # Scale: 3y=+3, 4y=+6, 5y=+8 (diminishing returns)
+        years_beyond_3 = (age_days - 1095) / 365
+        ultra_age_bonus = round(min(years_beyond_3 * 3, 8))
+    score += ultra_age_bonus
+
     # Reactivation bonus: old issue that recently got new activity
     # Signals upstream API changes, GA announcements, or renewed urgency.
     # Formula scales by issue age and update recency with a max bonus of +15.
@@ -437,6 +463,31 @@ def calculate_priority_score(
     # Bug bonus: 5%
     if is_bug:
         score += 5
+
+    is_breaking_change = any(
+        (label.get("name", label) if isinstance(label, dict) else label).lower() == "breaking-change"
+        for label in (labels or [])
+    )
+    is_new_resource = any(
+        (label.get("name", label) if isinstance(label, dict) else label).lower() == "new-resource"
+        for label in (labels or [])
+    )
+
+    # Breaking change: deprioritize slightly - requires maintainer oversight
+    if is_breaking_change:
+        score -= 5
+
+    # New resource: deprioritize - large scope, not a quick fix
+    if is_new_resource:
+        score -= 3
+
+    # Crash severity bonus: panics and crashes are critical regardless of age
+    is_crash = any(
+        (label.get("name", label) if isinstance(label, dict) else label).lower() == "crash"
+        for label in (labels or [])
+    )
+    if is_crash:
+        score += 15
 
     # Actionable bonus: 5%
     if is_actionable:
@@ -474,7 +525,7 @@ def calculate_priority_score(
 
     score += size_bonus
     
-    return min(score, 100)
+    return max(0, min(score, 95))
 
 
 def generate_report(issues: List[IssueData]) -> None:

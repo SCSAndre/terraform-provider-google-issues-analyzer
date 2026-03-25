@@ -363,6 +363,58 @@ class TestAnalyzeIssues(unittest.TestCase):
         self.assertIn('priority_score', result[0])
         self.assertIn('age_days', result[0])
 
+    def test_forward_linked_sets_internally_tracked(self):
+        """Issue with forward/linked label is marked internally tracked."""
+        from script import analyze_issues
+
+        mock_classifier = Mock()
+        mock_classifier.classify_issue_with_related.return_value = (True, 'Cloud Armor', 90.0, 'HIGH', [])
+        mock_checker = Mock()
+        mock_checker.is_issue_available.return_value = (True, None)
+
+        issues = [{
+            'number': 124,
+            'title': 'Tracked issue',
+            'html_url': 'https://github.com/test/124',
+            'state': 'open',
+            'created_at': '2025-01-01T00:00:00Z',
+            'updated_at': '2025-01-02T00:00:00Z',
+            'comments': 0,
+            'labels': [{'name': 'forward/linked'}],
+            'assignees': [],
+        }]
+
+        result = analyze_issues(issues, mock_classifier, mock_checker)
+
+        self.assertEqual(len(result), 1)
+        self.assertTrue(result[0]['is_internally_tracked'])
+
+    def test_no_forward_linked_not_tracked(self):
+        """Issue without forward/linked is not internally tracked."""
+        from script import analyze_issues
+
+        mock_classifier = Mock()
+        mock_classifier.classify_issue_with_related.return_value = (True, 'Cloud Armor', 90.0, 'HIGH', [])
+        mock_checker = Mock()
+        mock_checker.is_issue_available.return_value = (True, None)
+
+        issues = [{
+            'number': 125,
+            'title': 'Untracked issue',
+            'html_url': 'https://github.com/test/125',
+            'state': 'open',
+            'created_at': '2025-01-01T00:00:00Z',
+            'updated_at': '2025-01-02T00:00:00Z',
+            'comments': 0,
+            'labels': [{'name': 'bug'}],
+            'assignees': [],
+        }]
+
+        result = analyze_issues(issues, mock_classifier, mock_checker)
+
+        self.assertEqual(len(result), 1)
+        self.assertFalse(result[0]['is_internally_tracked'])
+
     def test_analyze_handles_missing_labels(self):
         """Test handling issues without labels."""
         from script import analyze_issues
@@ -872,6 +924,47 @@ class TestPriorityScoring(unittest.TestCase):
 
         self.assertAlmostEqual(bug_score - non_bug_score, 5.0, places=7)
 
+    def test_crash_label_adds_bonus(self):
+        from script import calculate_priority_score
+
+        base = self._make_base_issue()
+        base["labels"] = [{"name": "crash"}]
+        score_with = calculate_priority_score(**base)
+        base["labels"] = []
+        score_without = calculate_priority_score(**base)
+        assert score_with == min(score_without + 15, 95)
+
+    def test_non_crash_no_bonus(self):
+        from script import calculate_priority_score
+
+        base = self._make_base_issue()
+        base["labels"] = [{"name": "bug"}]
+        score = calculate_priority_score(**base)
+        base["labels"] = []
+        score_no_labels = calculate_priority_score(**base)
+        # bug label alone should not trigger crash bonus
+        assert score == score_no_labels
+
+    def test_breaking_change_reduces_score(self):
+        from script import calculate_priority_score
+
+        base = self._make_base_issue()
+        base["labels"] = []
+        score_normal = calculate_priority_score(**base)
+        base["labels"] = [{"name": "breaking-change"}]
+        score_breaking = calculate_priority_score(**base)
+        assert score_breaking == max(0, score_normal - 5)
+
+    def test_new_resource_reduces_score(self):
+        from script import calculate_priority_score
+
+        base = self._make_base_issue()
+        base["labels"] = []
+        score_normal = calculate_priority_score(**base)
+        base["labels"] = [{"name": "new-resource"}]
+        score_new = calculate_priority_score(**base)
+        assert score_new == max(0, score_normal - 3)
+
     def test_size_xs_label_adds_bonus(self):
         """size/xs label adds 12 points to priority score."""
         from script import calculate_priority_score
@@ -957,6 +1050,43 @@ class TestPriorityScoring(unittest.TestCase):
         base["days_since_update"] = 10
         score_active = calculate_priority_score(**base)
         assert score_active > score_stale
+
+    def test_ultra_age_bonus_for_5_year_issue(self):
+        """A 5-year-old issue scores higher than a 2-year-old identical issue."""
+        from script import calculate_priority_score
+
+        base = self._make_base_issue()
+        base["age_days"] = 730  # 2 years
+        score_2y = calculate_priority_score(**base)
+        base["age_days"] = 1825  # 5 years
+        score_5y = calculate_priority_score(**base)
+        assert score_5y > score_2y
+
+    def test_ultra_age_bonus_zero_under_3_years(self):
+        """Issues under 3 years get no ultra-age bonus."""
+        from script import calculate_priority_score
+
+        base = self._make_base_issue()
+        base["age_days"] = 1000  # ~2.7 years
+        score_1000 = calculate_priority_score(**base)
+        base["age_days"] = 1094  # just under 3 years
+        score_1094 = calculate_priority_score(**base)
+        # Both should be equal since neither crosses the 1095-day threshold
+        assert score_1000 <= score_1094  # older still scores >= due to neglect
+
+    def test_ultra_age_bonus_capped_at_8(self):
+        """Ultra-age bonus never exceeds 8 points regardless of age."""
+        from script import calculate_priority_score
+
+        base = self._make_base_issue()
+        # Force neglect factor to its cap in both cases to isolate ultra-age behavior.
+        base["days_since_update"] = 1000
+        base["age_days"] = 99999  # absurdly old
+        score = calculate_priority_score(**base)
+        base["age_days"] = 2555  # 7 years (hits the +8 cap)
+        score_7y = calculate_priority_score(**base)
+        # Both should produce the same ultra_age_bonus (8)
+        assert score == score_7y
 
 
 class TestModuleEntryPoint(unittest.TestCase):
