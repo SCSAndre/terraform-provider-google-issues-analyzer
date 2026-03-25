@@ -42,7 +42,7 @@ classifiers = [
 
 dependencies = [
     "requests>=2.31.0",
-    "scikit-learn>=1.3.0",
+    "scikit-learn>=1.5.0",
     "tenacity>=9.0.0",
     "typing-extensions>=4.9.0",
 ]
@@ -51,7 +51,7 @@ dependencies = [
 dev = [
     "pytest>=7.4.0",
     "pytest-cov>=4.1.0",
-    "ruff>=0.1.0",
+    "ruff>=0.8.0",
     "mypy>=1.5.0",
     "bandit>=1.7.0",
     "pre-commit>=3.5.0",
@@ -61,9 +61,7 @@ docs = [
     "sphinx-rtd-theme>=1.3.0",
     "myst-parser>=2.0.0",
 ]
-email = [
-    "secure-smtplib>=0.1.1",
-]
+email = []
 gcp = [
     "google-cloud-secret-manager>=2.23.0",
 ]
@@ -76,8 +74,8 @@ Issues = "https://github.com/SCSAndre/terraform-provider-google-issues-analyzer/
 Changelog = "https://github.com/SCSAndre/terraform-provider-google-issues-analyzer/blob/main/CHANGELOG.md"
 
 [project.scripts]
-analyze-issues = "script:main"
-evaluate-classifier-quality = "offline_evaluator:main"
+analyze-issues = "terraform_issues_analyzer.cli:main"
+evaluate-classifier-quality = "terraform_issues_analyzer.offline_evaluator:main"
 
 
 # =============================================================================
@@ -89,9 +87,9 @@ requires = ["setuptools>=68.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
-where = ["."]
-include = ["*"]
-exclude = ["tests*", "analysis_results*"]
+where = ["src"]
+include = ["terraform_issues_analyzer*"]
+exclude = ["tests*"]
 
 
 # =============================================================================
@@ -154,20 +152,11 @@ ignore = [
 
 # Per-file ignores
 [tool.ruff.lint.per-file-ignores]
-"test_*.py" = ["D", "ANN", "S"]  # Ignore docstrings and annotations in tests
+"tests/test_*.py" = ["D", "ANN", "S"]  # Ignore docstrings and annotations in tests
 
 [tool.ruff.lint.isort]
 known-first-party = [
-    "config",
-    "github_client",
-    "issue_classifier",
-    "availability_checker",
-    "report_generator",
-    "service_definitions",
-    "types_definitions",
-    "exceptions",
-    "logging_config",
-    "validators",
+    "terraform_issues_analyzer",
 ]
 
 [tool.ruff.lint.pydocstyle]
@@ -200,8 +189,8 @@ warn_return_any = false
 # =============================================================================
 
 [tool.pytest.ini_options]
-addopts = "--cov=. --cov-report=term-missing --cov-fail-under=70 -v"
-testpaths = ["."]
+addopts = "--cov=src/terraform_issues_analyzer --cov-report=term-missing --cov-fail-under=70 -v"
+testpaths = ["tests"]
 
 
 # =============================================================================
@@ -209,14 +198,13 @@ testpaths = ["."]
 # =============================================================================
 
 [tool.coverage.run]
-source = ["."]
+source = ["src/terraform_issues_analyzer"]
 branch = true
 omit = [
-    "test_*.py",
+    "tests/*",
     "__pycache__/*",
     ".venv/*",
     "venv/*",
-    "setup.py",
 ]
 
 [tool.coverage.report]

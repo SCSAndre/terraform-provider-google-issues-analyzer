@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from issue_classifier import IssueClassifier
+from .issue_classifier import IssueClassifier
 
 
 @dataclass

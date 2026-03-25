@@ -54,6 +54,7 @@ jobs:
       run: |
         python -m pip install --upgrade pip
         pip install -r requirements.txt
+        pip install -e .
 
     - name: Run issue analyzer
       env:
@@ -64,7 +65,7 @@ jobs:
         echo "   Dry run: ${{ inputs.dry_run || 'false' }}"
         echo "   Debug: ${{ inputs.debug_enabled || 'false' }}"
         echo "   Send email: ${{ inputs.send_email || 'true' }}"
-        python script.py
+        python -m terraform_issues_analyzer.cli
 
     - name: Get current date
       id: date
@@ -104,7 +105,7 @@ jobs:
           exit 0
         fi
         echo "📧 Sending email report to team..."
-        python3 send_team_email.py
+        python3 -m terraform_issues_analyzer.send_team_email
       continue-on-error: true
 
     - name: Upload report as artifact

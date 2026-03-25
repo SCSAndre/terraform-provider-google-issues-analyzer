@@ -16,7 +16,7 @@ Example:
 import requests
 import time
 from typing import Optional, List, Dict, Any
-from datetime import datetime
+from datetime import datetime, timezone
 from tenacity import (
     RetryError,
     Retrying,
@@ -25,18 +25,18 @@ from tenacity import (
     wait_exponential,
 )
 
-from config import (
+from .config import (
     GITHUB_TOKEN, TARGET_REPO, RATE_LIMIT_BUFFER,
     REQUEST_DELAY, RATE_CHECK_INTERVAL, MAX_RETRIES, INITIAL_BACKOFF
 )
-from exceptions import (
+from .exceptions import (
     GitHubAPIError,
     RateLimitExceededError,
     AuthenticationError,
     NetworkError,
     ResourceNotFoundError,
 )
-from logging_config import get_logger, log_performance
+from .logging_config import get_logger, log_performance
 
 logger = get_logger(__name__)
 
@@ -192,10 +192,10 @@ class GitHubClient:
             reset_time = data['resources']['core']['reset']
             
             self._rate_limit_remaining = remaining
-            self._rate_limit_reset = datetime.fromtimestamp(reset_time)
+            self._rate_limit_reset = datetime.fromtimestamp(reset_time, tz=timezone.utc)
 
             if remaining < RATE_LIMIT_BUFFER:
-                wait_time = (self._rate_limit_reset - datetime.now()).total_seconds()
+                wait_time = (self._rate_limit_reset - datetime.now(timezone.utc)).total_seconds()
                 if wait_time > 0:
                     if wait_time > 3600:  # More than 1 hour
                         raise RateLimitExceededError(
@@ -226,7 +226,7 @@ class GitHubClient:
                 original_error=e
             )
         except requests.RequestException as e:
-            logger.warning(f"Could not check rate limit: {e}")
+            logger.warning("Could not check rate limit: %s", e)
 
     def _handle_response_error(
         self,
@@ -263,7 +263,7 @@ class GitHubClient:
                 reset_header = response.headers.get('X-RateLimit-Reset')
                 reset_time = None
                 if reset_header:
-                    reset_time = datetime.fromtimestamp(int(reset_header))
+                    reset_time = datetime.fromtimestamp(int(reset_header), tz=timezone.utc)
                 raise RateLimitExceededError(
                     remaining=0,
                     reset_time=reset_time,
@@ -282,7 +282,7 @@ class GitHubClient:
             reset_header = response.headers.get('X-RateLimit-Reset')
             reset_time = None
             if reset_header:
-                reset_time = datetime.fromtimestamp(int(reset_header))
+                reset_time = datetime.fromtimestamp(int(reset_header), tz=timezone.utc)
             raise RateLimitExceededError(
                 remaining=0,
                 reset_time=reset_time,
@@ -455,7 +455,8 @@ class GitHubClient:
                 
             all_issues.extend(issues)
             logger.info(
-                f"Progress: {len(all_issues)} issues fetched",
+                "Progress: %d issues fetched",
+                len(all_issues),
                 extra={"page": page, "total": len(all_issues)}
             )
             
@@ -465,7 +466,8 @@ class GitHubClient:
             page += 1
         
         logger.info(
-            f"Completed fetching {len(all_issues)} issues",
+            "Completed fetching %d issues",
+            len(all_issues),
             extra={"pages_fetched": page, "total_issues": len(all_issues)}
         )
         return all_issues

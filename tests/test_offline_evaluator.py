@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from offline_evaluator import (
+from terraform_issues_analyzer.offline_evaluator import (
     compute_binary_metrics,
     evaluate_shadow_regression,
     filter_issues_by_split,
@@ -133,7 +133,7 @@ class TestOfflineEvaluator(unittest.TestCase):
             "baseline": {"precision": 0.9, "recall": 0.9, "f1": 0.9},
             "shadow": {"precision": 0.5, "recall": 0.5, "f1": 0.5},
         }
-        with patch("offline_evaluator.run_evaluation", return_value=fake_result):
+        with patch("terraform_issues_analyzer.offline_evaluator.run_evaluation", return_value=fake_result):
             with patch(
                 "sys.argv",
                 [
@@ -169,7 +169,7 @@ class TestOfflineEvaluator(unittest.TestCase):
             "baseline": {"precision": 0.9, "recall": 0.9, "f1": 0.9},
             "shadow": {"precision": 0.5, "recall": 0.5, "f1": 0.5},
         }
-        with patch("offline_evaluator.run_evaluation", return_value=fake_result):
+        with patch("terraform_issues_analyzer.offline_evaluator.run_evaluation", return_value=fake_result):
             with patch(
                 "sys.argv",
                 [

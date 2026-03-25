@@ -12,9 +12,9 @@ The package provides:
 - Custom exception hierarchy for precise error handling
 
 Example:
-    >>> from github_client import GitHubClient
-    >>> from issue_classifier import IssueClassifier
-    >>> 
+    >>> from terraform_issues_analyzer.github_client import GitHubClient
+    >>> from terraform_issues_analyzer.issue_classifier import IssueClassifier
+    >>>
     >>> client = GitHubClient()
     >>> classifier = IssueClassifier()
     >>> issues = client.fetch_all_issues()
@@ -41,7 +41,7 @@ __author__ = "SCSAndre"
 __license__ = "MIT"
 
 # Public API exports
-from exceptions import (
+from .exceptions import (
     IssueAnalyzerError,
     GitHubAPIError,
     RateLimitExceededError,
@@ -51,13 +51,13 @@ from exceptions import (
     ReportGenerationError,
     ValidationError,
 )
-from logging_config import (
+from .logging_config import (
     setup_logging,
     get_logger,
     log_performance,
     LogContext,
 )
-from config import (
+from .config import (
     GITHUB_TOKEN,
     TARGET_REPO,
     MIN_CONFIDENCE_THRESHOLD,
@@ -89,4 +89,3 @@ __all__ = [
     "MIN_CONFIDENCE_THRESHOLD",
     "validate_config",
 ]
-

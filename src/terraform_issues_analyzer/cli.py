@@ -30,30 +30,31 @@ import json
 from datetime import date
 from typing import Dict, List, Any
 
-from config import (
+from .config import (
     OUTPUT_DIR,
     ENABLE_TRIGRAM_SHADOW_MODE,
     SHADOW_SCORE_DELTA_THRESHOLD,
     validate_config,
+    ensure_output_dir,
 )
-from github_client import GitHubClient
-from issue_classifier import IssueClassifier
-from issue_classifier import classify_labels
-from issue_classifier import get_blocking_label_info
-from availability_checker import AvailabilityChecker
-import report_generator
-from exceptions import (
+from .github_client import GitHubClient
+from .issue_classifier import IssueClassifier
+from .issue_classifier import classify_labels
+from .issue_classifier import get_blocking_label_info
+from .availability_checker import AvailabilityChecker
+from . import report_generator
+from .exceptions import (
     IssueAnalyzerError,
     ConfigurationError,
     GitHubAPIError,
 )
-from logging_config import (
+from .logging_config import (
     setup_logging,
     get_logger,
     log_performance,
     LogContext,
 )
-from types_definitions import IssueData
+from .types_definitions import IssueData
 
 # Initialize logging
 logger = get_logger(__name__)
@@ -75,6 +76,7 @@ def main() -> int:
     """
     # Setup logging based on environment
     setup_logging()
+    ensure_output_dir()
     
     logger.info("Starting Terraform Provider Google issue analysis")
     

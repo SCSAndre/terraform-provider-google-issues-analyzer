@@ -2,11 +2,11 @@
 import unittest
 from unittest.mock import patch
 
-from issue_classifier import IssueClassifier, classify_labels
+from terraform_issues_analyzer.issue_classifier import IssueClassifier, classify_labels
 
 
 def test_forward_exempt_detected():
-    from issue_classifier import get_blocking_label_info
+    from terraform_issues_analyzer.issue_classifier import get_blocking_label_info
 
     result = get_blocking_label_info(["forward/exempt", "service/compute"])
     assert result["is_exempt"] is True
@@ -14,7 +14,7 @@ def test_forward_exempt_detected():
 
 
 def test_upstream_detected():
-    from issue_classifier import get_blocking_label_info
+    from terraform_issues_analyzer.issue_classifier import get_blocking_label_info
 
     result = get_blocking_label_info(["upstream", "bug"])
     assert result["is_upstream"] is True
@@ -22,7 +22,7 @@ def test_upstream_detected():
 
 
 def test_normal_issue_not_blocked():
-    from issue_classifier import get_blocking_label_info
+    from terraform_issues_analyzer.issue_classifier import get_blocking_label_info
 
     result = get_blocking_label_info(["forward/linked", "size/s"])
     assert result["is_blocked"] is False

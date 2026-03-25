@@ -6,7 +6,7 @@ from typing import Dict, Tuple, Optional, List, Any
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 
-from config import (
+from .config import (
     TFIDF_WEIGHT,
     REGEX_WEIGHT,
     MIN_CONFIDENCE_THRESHOLD,
@@ -14,7 +14,7 @@ from config import (
     MEDIUM_CONFIDENCE_THRESHOLD,
     ConfidenceLevel,
 )
-from service_definitions import get_service_terms, get_critical_keywords
+from .service_definitions import get_service_terms, get_critical_keywords
 
 logger = logging.getLogger(__name__)
 

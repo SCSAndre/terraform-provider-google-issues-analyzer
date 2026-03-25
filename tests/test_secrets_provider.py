@@ -4,7 +4,7 @@ import os
 import unittest
 from unittest.mock import patch
 
-from secrets_provider import clear_secret_cache, get_secret
+from terraform_issues_analyzer.secrets_provider import clear_secret_cache, get_secret
 
 
 class TestSecretsProvider(unittest.TestCase):

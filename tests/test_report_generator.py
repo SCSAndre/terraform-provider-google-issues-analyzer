@@ -6,7 +6,7 @@ import tempfile
 import os
 from pathlib import Path
 
-from report_generator import ReportGenerator, generate_analysis_reports, write_executive_summary
+from terraform_issues_analyzer.report_generator import ReportGenerator, generate_analysis_reports, write_executive_summary
 
 
 class TestReportGeneratorGrouping(unittest.TestCase):
@@ -54,7 +54,7 @@ class TestReportGeneratorOutput(unittest.TestCase):
         import shutil
         shutil.rmtree(self.temp_dir, ignore_errors=True)
 
-    @patch('report_generator.OUTPUT_DIR')
+    @patch('terraform_issues_analyzer.report_generator.OUTPUT_DIR')
     def test_generate_markdown_report(self, mock_output_dir):
         """Test full markdown report generation."""
         mock_output_dir.__truediv__ = lambda self, x: Path(self.temp_dir) / x
@@ -147,7 +147,7 @@ class TestReportGeneratorRecentlyReactivated(unittest.TestCase):
             "reactivation_bonus": 8,
         }
 
-    @patch('report_generator.generate_html_report')
+    @patch('terraform_issues_analyzer.report_generator.generate_html_report')
     def test_markdown_reactivated_section_present(self, mock_generate_html_report):
         """Markdown report contains the Recently Reactivated section."""
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -187,7 +187,7 @@ class TestReportGeneratorContributorEntryPoints(unittest.TestCase):
             "priority_score": 70.0,
         }
 
-    @patch('report_generator.generate_html_report')
+    @patch('terraform_issues_analyzer.report_generator.generate_html_report')
     def test_markdown_contributor_entry_points_present(self, mock_generate_html_report):
         """Markdown report contains the Contributor Entry Points section."""
         with tempfile.TemporaryDirectory() as temp_dir:

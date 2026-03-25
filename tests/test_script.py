@@ -16,14 +16,14 @@ import os
 class TestMainFunction(unittest.TestCase):
     """Tests for the main() entry point function."""
 
-    @patch('script.generate_report')
-    @patch('script.analyze_issues')
-    @patch('script.fetch_all_issues')
-    @patch('script.AvailabilityChecker')
-    @patch('script.IssueClassifier')
-    @patch('script.GitHubClient')
-    @patch('script.validate_config')
-    @patch('script.setup_logging')
+    @patch('terraform_issues_analyzer.cli.generate_report')
+    @patch('terraform_issues_analyzer.cli.analyze_issues')
+    @patch('terraform_issues_analyzer.cli.fetch_all_issues')
+    @patch('terraform_issues_analyzer.cli.AvailabilityChecker')
+    @patch('terraform_issues_analyzer.cli.IssueClassifier')
+    @patch('terraform_issues_analyzer.cli.GitHubClient')
+    @patch('terraform_issues_analyzer.cli.validate_config')
+    @patch('terraform_issues_analyzer.cli.setup_logging')
     def test_main_success(
         self,
         mock_setup_logging,
@@ -40,7 +40,7 @@ class TestMainFunction(unittest.TestCase):
         mock_fetch.return_value = [{'number': 1, 'title': 'Test'}]
         mock_analyze.return_value = [{'number': 1, 'title': 'Test', 'category': 'Test'}]
 
-        from script import main
+        from terraform_issues_analyzer.cli import main
         result = main()
 
         self.assertEqual(result, 0)
@@ -50,8 +50,8 @@ class TestMainFunction(unittest.TestCase):
         mock_analyze.assert_called_once()
         mock_report.assert_called_once()
 
-    @patch('script.validate_config')
-    @patch('script.setup_logging')
+    @patch('terraform_issues_analyzer.cli.validate_config')
+    @patch('terraform_issues_analyzer.cli.setup_logging')
     def test_main_config_invalid(self, mock_setup_logging, mock_validate_config):
         """Test main returns 1 when configuration is invalid."""
         mock_validate_config.return_value = {
@@ -60,19 +60,19 @@ class TestMainFunction(unittest.TestCase):
             'warnings': []
         }
 
-        from script import main
+        from terraform_issues_analyzer.cli import main
         result = main()
 
         self.assertEqual(result, 1)
 
-    @patch('script.generate_report')
-    @patch('script.analyze_issues')
-    @patch('script.fetch_all_issues')
-    @patch('script.AvailabilityChecker')
-    @patch('script.IssueClassifier')
-    @patch('script.GitHubClient')
-    @patch('script.validate_config')
-    @patch('script.setup_logging')
+    @patch('terraform_issues_analyzer.cli.generate_report')
+    @patch('terraform_issues_analyzer.cli.analyze_issues')
+    @patch('terraform_issues_analyzer.cli.fetch_all_issues')
+    @patch('terraform_issues_analyzer.cli.AvailabilityChecker')
+    @patch('terraform_issues_analyzer.cli.IssueClassifier')
+    @patch('terraform_issues_analyzer.cli.GitHubClient')
+    @patch('terraform_issues_analyzer.cli.validate_config')
+    @patch('terraform_issues_analyzer.cli.setup_logging')
     def test_main_logs_warnings(
         self,
         mock_setup_logging,
@@ -93,15 +93,15 @@ class TestMainFunction(unittest.TestCase):
         mock_fetch.return_value = []
         mock_analyze.return_value = []
 
-        from script import main
-        with patch('script.logger') as mock_logger:
+        from terraform_issues_analyzer.cli import main
+        with patch('terraform_issues_analyzer.cli.logger') as mock_logger:
             result = main()
 
         self.assertEqual(result, 0)
 
-    @patch('script.GitHubClient')
-    @patch('script.validate_config')
-    @patch('script.setup_logging')
+    @patch('terraform_issues_analyzer.cli.GitHubClient')
+    @patch('terraform_issues_analyzer.cli.validate_config')
+    @patch('terraform_issues_analyzer.cli.setup_logging')
     def test_main_configuration_error(
         self,
         mock_setup_logging,
@@ -109,8 +109,8 @@ class TestMainFunction(unittest.TestCase):
         mock_client
     ):
         """Test main handles ConfigurationError."""
-        from script import main
-        from exceptions import ConfigurationError
+        from terraform_issues_analyzer.cli import main
+        from terraform_issues_analyzer.exceptions import ConfigurationError
         
         mock_validate_config.return_value = {'valid': True, 'errors': [], 'warnings': []}
         mock_client.side_effect = ConfigurationError("Invalid token")
@@ -119,9 +119,9 @@ class TestMainFunction(unittest.TestCase):
 
         self.assertEqual(result, 1)
 
-    @patch('script.GitHubClient')
-    @patch('script.validate_config')
-    @patch('script.setup_logging')
+    @patch('terraform_issues_analyzer.cli.GitHubClient')
+    @patch('terraform_issues_analyzer.cli.validate_config')
+    @patch('terraform_issues_analyzer.cli.setup_logging')
     def test_main_github_api_error(
         self,
         mock_setup_logging,
@@ -129,8 +129,8 @@ class TestMainFunction(unittest.TestCase):
         mock_client
     ):
         """Test main handles GitHubAPIError."""
-        from script import main
-        from exceptions import GitHubAPIError
+        from terraform_issues_analyzer.cli import main
+        from terraform_issues_analyzer.exceptions import GitHubAPIError
         
         mock_validate_config.return_value = {'valid': True, 'errors': [], 'warnings': []}
         mock_client.side_effect = GitHubAPIError("API failure", status_code=500)
@@ -139,9 +139,9 @@ class TestMainFunction(unittest.TestCase):
 
         self.assertEqual(result, 1)
 
-    @patch('script.GitHubClient')
-    @patch('script.validate_config')
-    @patch('script.setup_logging')
+    @patch('terraform_issues_analyzer.cli.GitHubClient')
+    @patch('terraform_issues_analyzer.cli.validate_config')
+    @patch('terraform_issues_analyzer.cli.setup_logging')
     def test_main_generic_issue_analyzer_error(
         self,
         mock_setup_logging,
@@ -149,8 +149,8 @@ class TestMainFunction(unittest.TestCase):
         mock_client
     ):
         """Test main handles generic IssueAnalyzerError."""
-        from script import main
-        from exceptions import IssueAnalyzerError
+        from terraform_issues_analyzer.cli import main
+        from terraform_issues_analyzer.exceptions import IssueAnalyzerError
         
         mock_validate_config.return_value = {'valid': True, 'errors': [], 'warnings': []}
         mock_client.side_effect = IssueAnalyzerError("Analysis failed")
@@ -159,9 +159,9 @@ class TestMainFunction(unittest.TestCase):
 
         self.assertEqual(result, 1)
 
-    @patch('script.GitHubClient')
-    @patch('script.validate_config')
-    @patch('script.setup_logging')
+    @patch('terraform_issues_analyzer.cli.GitHubClient')
+    @patch('terraform_issues_analyzer.cli.validate_config')
+    @patch('terraform_issues_analyzer.cli.setup_logging')
     def test_main_keyboard_interrupt(
         self,
         mock_setup_logging,
@@ -169,7 +169,7 @@ class TestMainFunction(unittest.TestCase):
         mock_client
     ):
         """Test main handles KeyboardInterrupt with exit code 130."""
-        from script import main
+        from terraform_issues_analyzer.cli import main
         
         mock_validate_config.return_value = {'valid': True, 'errors': [], 'warnings': []}
         mock_client.side_effect = KeyboardInterrupt()
@@ -178,9 +178,9 @@ class TestMainFunction(unittest.TestCase):
 
         self.assertEqual(result, 130)
 
-    @patch('script.GitHubClient')
-    @patch('script.validate_config')
-    @patch('script.setup_logging')
+    @patch('terraform_issues_analyzer.cli.GitHubClient')
+    @patch('terraform_issues_analyzer.cli.validate_config')
+    @patch('terraform_issues_analyzer.cli.setup_logging')
     def test_main_unexpected_exception(
         self,
         mock_setup_logging,
@@ -188,7 +188,7 @@ class TestMainFunction(unittest.TestCase):
         mock_client
     ):
         """Test main handles unexpected exceptions."""
-        from script import main
+        from terraform_issues_analyzer.cli import main
         
         mock_validate_config.return_value = {'valid': True, 'errors': [], 'warnings': []}
         mock_client.side_effect = RuntimeError("Unexpected error")
@@ -203,7 +203,7 @@ class TestFetchAllIssues(unittest.TestCase):
 
     def test_fetch_single_page(self):
         """Test fetching issues that fit in one page."""
-        from script import fetch_all_issues
+        from terraform_issues_analyzer.cli import fetch_all_issues
         
         mock_client = Mock()
         mock_client.fetch_issues_page.return_value = [
@@ -217,7 +217,7 @@ class TestFetchAllIssues(unittest.TestCase):
 
     def test_fetch_multiple_pages(self):
         """Test fetching issues across multiple pages."""
-        from script import fetch_all_issues
+        from terraform_issues_analyzer.cli import fetch_all_issues
         
         mock_client = Mock()
         mock_client.fetch_issues_page.side_effect = [
@@ -232,7 +232,7 @@ class TestFetchAllIssues(unittest.TestCase):
 
     def test_fetch_empty_response(self):
         """Test handling empty response from first page."""
-        from script import fetch_all_issues
+        from terraform_issues_analyzer.cli import fetch_all_issues
         
         mock_client = Mock()
         mock_client.fetch_issues_page.return_value = []
@@ -243,7 +243,7 @@ class TestFetchAllIssues(unittest.TestCase):
 
     def test_fetch_none_response(self):
         """Test handling None response (API failure)."""
-        from script import fetch_all_issues
+        from terraform_issues_analyzer.cli import fetch_all_issues
         
         mock_client = Mock()
         mock_client.fetch_issues_page.return_value = None
@@ -254,7 +254,7 @@ class TestFetchAllIssues(unittest.TestCase):
 
     def test_fetch_stops_at_partial_page(self):
         """Test pagination stops when partial page received."""
-        from script import fetch_all_issues
+        from terraform_issues_analyzer.cli import fetch_all_issues
         
         mock_client = Mock()
         mock_client.fetch_issues_page.side_effect = [
@@ -274,7 +274,7 @@ class TestAnalyzeIssues(unittest.TestCase):
 
     def test_analyze_filters_pull_requests(self):
         """Test that pull requests are filtered out."""
-        from script import analyze_issues
+        from terraform_issues_analyzer.cli import analyze_issues
         
         mock_classifier = Mock()
         mock_checker = Mock()
@@ -298,7 +298,7 @@ class TestAnalyzeIssues(unittest.TestCase):
 
     def test_analyze_filters_non_relevant(self):
         """Test that non-relevant issues are filtered out."""
-        from script import analyze_issues
+        from terraform_issues_analyzer.cli import analyze_issues
         
         mock_classifier = Mock()
         mock_classifier.classify_issue_with_related.return_value = (False, None, 0, 'EXCLUDED', [])
@@ -315,7 +315,7 @@ class TestAnalyzeIssues(unittest.TestCase):
 
     def test_analyze_filters_unavailable(self):
         """Test that unavailable issues are filtered out."""
-        from script import analyze_issues
+        from terraform_issues_analyzer.cli import analyze_issues
         
         mock_classifier = Mock()
         mock_classifier.classify_issue_with_related.return_value = (True, 'Category', 85.0, 'HIGH', [])
@@ -333,7 +333,7 @@ class TestAnalyzeIssues(unittest.TestCase):
 
     def test_analyze_enriches_relevant_available(self):
         """Test that relevant and available issues are enriched."""
-        from script import analyze_issues
+        from terraform_issues_analyzer.cli import analyze_issues
         
         mock_classifier = Mock()
         mock_classifier.classify_issue_with_related.return_value = (True, 'Load Balancer', 92.5, 'HIGH', ['PSC'])
@@ -365,7 +365,7 @@ class TestAnalyzeIssues(unittest.TestCase):
 
     def test_forward_linked_sets_internally_tracked(self):
         """Issue with forward/linked label is marked internally tracked."""
-        from script import analyze_issues
+        from terraform_issues_analyzer.cli import analyze_issues
 
         mock_classifier = Mock()
         mock_classifier.classify_issue_with_related.return_value = (True, 'Cloud Armor', 90.0, 'HIGH', [])
@@ -391,7 +391,7 @@ class TestAnalyzeIssues(unittest.TestCase):
 
     def test_no_forward_linked_not_tracked(self):
         """Issue without forward/linked is not internally tracked."""
-        from script import analyze_issues
+        from terraform_issues_analyzer.cli import analyze_issues
 
         mock_classifier = Mock()
         mock_classifier.classify_issue_with_related.return_value = (True, 'Cloud Armor', 90.0, 'HIGH', [])
@@ -417,7 +417,7 @@ class TestAnalyzeIssues(unittest.TestCase):
 
     def test_analyze_handles_missing_labels(self):
         """Test handling issues without labels."""
-        from script import analyze_issues
+        from terraform_issues_analyzer.cli import analyze_issues
         
         mock_classifier = Mock()
         mock_classifier.classify_issue_with_related.return_value = (True, 'Category', 80.0, 'REVIEW', [])
@@ -442,7 +442,7 @@ class TestAnalyzeIssues(unittest.TestCase):
 
     def test_analyze_multiple_issues_mixed_results(self):
         """Test analyzing multiple issues with mixed outcomes."""
-        from script import analyze_issues
+        from terraform_issues_analyzer.cli import analyze_issues
         
         mock_classifier = Mock()
         mock_checker = Mock()
@@ -475,7 +475,7 @@ class TestAnalyzeIssues(unittest.TestCase):
 
     def test_analyze_shadow_mode_disabled_does_not_call_comparison(self):
         """Shadow comparison should not run when flag is disabled."""
-        from script import analyze_issues
+        from terraform_issues_analyzer.cli import analyze_issues
 
         mock_classifier = Mock()
         mock_classifier.classify_issue_with_related.return_value = (True, 'Cloud Armor', 88.0, 'HIGH', [])
@@ -494,14 +494,14 @@ class TestAnalyzeIssues(unittest.TestCase):
             'comments': 0,
         }]
 
-        with patch('script.ENABLE_TRIGRAM_SHADOW_MODE', False):
+        with patch('terraform_issues_analyzer.cli.ENABLE_TRIGRAM_SHADOW_MODE', False):
             analyze_issues(issues, mock_classifier, mock_checker)
 
         mock_classifier.get_shadow_score_comparison.assert_not_called()
 
     def test_analyze_shadow_mode_enabled_calls_comparison(self):
         """Shadow comparison should run when flag is enabled."""
-        from script import analyze_issues
+        from terraform_issues_analyzer.cli import analyze_issues
 
         mock_classifier = Mock()
         mock_classifier.classify_issue_with_related.return_value = (True, 'Cloud Armor', 88.0, 'HIGH', [])
@@ -525,15 +525,15 @@ class TestAnalyzeIssues(unittest.TestCase):
             'comments': 0,
         }]
 
-        with patch('script.ENABLE_TRIGRAM_SHADOW_MODE', True), \
-             patch('script.SHADOW_SCORE_DELTA_THRESHOLD', 15.0):
+        with patch('terraform_issues_analyzer.cli.ENABLE_TRIGRAM_SHADOW_MODE', True), \
+             patch('terraform_issues_analyzer.cli.SHADOW_SCORE_DELTA_THRESHOLD', 15.0):
             analyze_issues(issues, mock_classifier, mock_checker)
 
         mock_classifier.get_shadow_score_comparison.assert_called_once()
 
     def test_analyze_sets_top_level_actionable_key(self):
         """analyze_issues should expose actionable as a top-level enriched field."""
-        from script import analyze_issues
+        from terraform_issues_analyzer.cli import analyze_issues
 
         mock_classifier = Mock()
         mock_classifier.classify_issue_with_related.return_value = (True, 'Cloud Armor', 86.0, 'HIGH', [])
@@ -560,7 +560,7 @@ class TestAnalyzeIssues(unittest.TestCase):
 
     def test_thumbs_up_extracted_from_reactions(self):
         """thumbs_up is correctly extracted from the reactions dict."""
-        from script import analyze_issues
+        from terraform_issues_analyzer.cli import analyze_issues
 
         issue = {
             'number': 13,
@@ -587,7 +587,7 @@ class TestAnalyzeIssues(unittest.TestCase):
 
     def test_thumbs_up_defaults_to_zero_when_missing(self):
         """thumbs_up defaults to 0 when reactions key is absent."""
-        from script import analyze_issues
+        from terraform_issues_analyzer.cli import analyze_issues
 
         issue = {
             'number': 14,
@@ -625,10 +625,10 @@ class TestGenerateReport(unittest.TestCase):
         import shutil
         shutil.rmtree(self.temp_dir, ignore_errors=True)
 
-    @patch('script.OUTPUT_DIR')
+    @patch('terraform_issues_analyzer.cli.OUTPUT_DIR')
     def test_generate_empty_report(self, mock_output_dir):
         """Test generating report with no issues."""
-        from script import generate_report
+        from terraform_issues_analyzer.cli import generate_report
         
         mock_output_dir.__truediv__ = lambda self, x: Path(self.temp_dir) / x
         mock_output_dir.temp_dir = self.temp_dir
@@ -636,17 +636,17 @@ class TestGenerateReport(unittest.TestCase):
         # Use real path
         report_path = Path(self.temp_dir) / "terraform_target_services_issues_report_en.md"
         
-        with patch('script.OUTPUT_DIR', Path(self.temp_dir)):
+        with patch('terraform_issues_analyzer.cli.OUTPUT_DIR', Path(self.temp_dir)):
             generate_report([])
         
         self.assertTrue(report_path.exists())
         content = report_path.read_text()
         self.assertIn('**Total Issues Analyzed:** 0', content)
 
-    @patch('script.OUTPUT_DIR')
+    @patch('terraform_issues_analyzer.cli.OUTPUT_DIR')
     def test_generate_report_with_issues(self, mock_output_dir):
         """Test generating report with multiple issues."""
-        from script import generate_report
+        from terraform_issues_analyzer.cli import generate_report
         
         report_path = Path(self.temp_dir) / "terraform_target_services_issues_report_en.md"
         
@@ -691,7 +691,7 @@ class TestGenerateReport(unittest.TestCase):
             }
         ]
         
-        with patch('script.OUTPUT_DIR', Path(self.temp_dir)):
+        with patch('terraform_issues_analyzer.cli.OUTPUT_DIR', Path(self.temp_dir)):
             generate_report(issues)
         
         content = report_path.read_text()
@@ -702,10 +702,10 @@ class TestGenerateReport(unittest.TestCase):
         # Now using compact table format instead of detailed entries
         self.assertIn('| Issue | Confidence | Priority | Age | Updated | Type | Labels |', content)
 
-    @patch('script.OUTPUT_DIR')
+    @patch('terraform_issues_analyzer.cli.OUTPUT_DIR')
     def test_generate_report_groups_by_category(self, mock_output_dir):
         """Test that report groups issues by category."""
-        from script import generate_report
+        from terraform_issues_analyzer.cli import generate_report
         
         report_path = Path(self.temp_dir) / "terraform_target_services_issues_report_en.md"
         
@@ -725,7 +725,7 @@ class TestGenerateReport(unittest.TestCase):
              'confidence': 80.0, 'created_at': '2025-01-01T00:00:00Z', 'comments': 0, 'labels': []},
         ]
         
-        with patch('script.OUTPUT_DIR', Path(self.temp_dir)):
+        with patch('terraform_issues_analyzer.cli.OUTPUT_DIR', Path(self.temp_dir)):
             generate_report(issues)
         
         content = report_path.read_text()
@@ -734,10 +734,10 @@ class TestGenerateReport(unittest.TestCase):
         self.assertIn('Load Balancers', content)
         self.assertIn('Cloud Armor', content)
 
-    @patch('script.OUTPUT_DIR')
+    @patch('terraform_issues_analyzer.cli.OUTPUT_DIR')
     def test_generate_report_sorts_by_priority(self, mock_output_dir):
         """Test that issues within categories are sorted by priority score."""
-        from script import generate_report
+        from terraform_issues_analyzer.cli import generate_report
         
         report_path = Path(self.temp_dir) / "terraform_target_services_issues_report_en.md"
         
@@ -757,7 +757,7 @@ class TestGenerateReport(unittest.TestCase):
              'confidence': 85.0, 'priority_score': 60.0},
         ]
         
-        with patch('script.OUTPUT_DIR', Path(self.temp_dir)):
+        with patch('terraform_issues_analyzer.cli.OUTPUT_DIR', Path(self.temp_dir)):
             generate_report(issues)
         
         content = report_path.read_text()
@@ -789,7 +789,7 @@ class TestPriorityScoring(unittest.TestCase):
         }
 
     def test_high_confidence_gets_bonus(self):
-        from script import calculate_priority_score
+        from terraform_issues_analyzer.cli import calculate_priority_score
 
         high_score = calculate_priority_score(
             confidence=90,
@@ -814,7 +814,7 @@ class TestPriorityScoring(unittest.TestCase):
         self.assertGreater(high_score, review_score)
 
     def test_reactions_increase_priority(self):
-        from script import calculate_priority_score
+        from terraform_issues_analyzer.cli import calculate_priority_score
 
         no_reactions = calculate_priority_score(
             confidence=80,
@@ -840,7 +840,7 @@ class TestPriorityScoring(unittest.TestCase):
 
     def test_actionable_true_adds_five_points(self):
         """Actionable issues should receive exactly a +5 priority bonus."""
-        from script import calculate_priority_score
+        from terraform_issues_analyzer.cli import calculate_priority_score
 
         base_score = calculate_priority_score(
             confidence=70,
@@ -869,7 +869,7 @@ class TestPriorityScoring(unittest.TestCase):
 
     def test_actionable_default_false_adds_zero_points(self):
         """The default actionable value should behave like False and add no bonus."""
-        from script import calculate_priority_score
+        from terraform_issues_analyzer.cli import calculate_priority_score
 
         default_score = calculate_priority_score(
             confidence=65,
@@ -897,7 +897,7 @@ class TestPriorityScoring(unittest.TestCase):
 
     def test_bug_true_adds_five_points(self):
         """Bug label bonus should now contribute exactly +5."""
-        from script import calculate_priority_score
+        from terraform_issues_analyzer.cli import calculate_priority_score
 
         non_bug_score = calculate_priority_score(
             confidence=75,
@@ -925,7 +925,7 @@ class TestPriorityScoring(unittest.TestCase):
         self.assertAlmostEqual(bug_score - non_bug_score, 5.0, places=7)
 
     def test_crash_label_adds_bonus(self):
-        from script import calculate_priority_score
+        from terraform_issues_analyzer.cli import calculate_priority_score
 
         base = self._make_base_issue()
         base["labels"] = [{"name": "crash"}]
@@ -935,7 +935,7 @@ class TestPriorityScoring(unittest.TestCase):
         assert score_with == min(score_without + 15, 95)
 
     def test_non_crash_no_bonus(self):
-        from script import calculate_priority_score
+        from terraform_issues_analyzer.cli import calculate_priority_score
 
         base = self._make_base_issue()
         base["labels"] = [{"name": "bug"}]
@@ -946,7 +946,7 @@ class TestPriorityScoring(unittest.TestCase):
         assert score == score_no_labels
 
     def test_breaking_change_reduces_score(self):
-        from script import calculate_priority_score
+        from terraform_issues_analyzer.cli import calculate_priority_score
 
         base = self._make_base_issue()
         base["labels"] = []
@@ -956,7 +956,7 @@ class TestPriorityScoring(unittest.TestCase):
         assert score_breaking == max(0, score_normal - 5)
 
     def test_new_resource_reduces_score(self):
-        from script import calculate_priority_score
+        from terraform_issues_analyzer.cli import calculate_priority_score
 
         base = self._make_base_issue()
         base["labels"] = []
@@ -967,7 +967,7 @@ class TestPriorityScoring(unittest.TestCase):
 
     def test_size_xs_label_adds_bonus(self):
         """size/xs label adds 12 points to priority score."""
-        from script import calculate_priority_score
+        from terraform_issues_analyzer.cli import calculate_priority_score
 
         issue = self._make_base_issue()
         issue["labels"] = [{"name": "size/xs"}]
@@ -977,7 +977,7 @@ class TestPriorityScoring(unittest.TestCase):
 
     def test_size_l_label_no_change(self):
         """size/l label adds 0 points."""
-        from script import calculate_priority_score
+        from terraform_issues_analyzer.cli import calculate_priority_score
 
         issue = self._make_base_issue()
         issue["labels"] = [{"name": "size/l"}]
@@ -987,7 +987,7 @@ class TestPriorityScoring(unittest.TestCase):
 
     def test_size_label_handles_string_format(self):
         """Labels as plain strings (not dicts) are handled safely."""
-        from script import calculate_priority_score
+        from terraform_issues_analyzer.cli import calculate_priority_score
 
         issue = self._make_base_issue()
         issue["labels"] = ["size/s", "bug"]
@@ -997,7 +997,7 @@ class TestPriorityScoring(unittest.TestCase):
 
     def test_reactions_increase_priority_score(self):
         """An issue with 15 thumbs_up scores higher than the same issue with 0."""
-        from script import calculate_priority_score
+        from terraform_issues_analyzer.cli import calculate_priority_score
 
         base = self._make_base_issue()
         base["reactions_plus_one"] = 0
@@ -1008,7 +1008,7 @@ class TestPriorityScoring(unittest.TestCase):
 
     def test_reactions_capped_at_30(self):
         """thumbs_up above 30 gives the same score as exactly 30."""
-        from script import calculate_priority_score
+        from terraform_issues_analyzer.cli import calculate_priority_score
 
         base = self._make_base_issue()
         base["reactions_plus_one"] = 30
@@ -1019,7 +1019,7 @@ class TestPriorityScoring(unittest.TestCase):
 
     def test_reactivation_bonus_applied_for_old_recent_issue(self):
         """Issue older than 1 year with activity in last 90 days gets bonus."""
-        from script import calculate_priority_score
+        from terraform_issues_analyzer.cli import calculate_priority_score
 
         base = self._make_base_issue()
         base["age_days"] = 730
@@ -1031,7 +1031,7 @@ class TestPriorityScoring(unittest.TestCase):
 
     def test_reactivation_bonus_zero_for_new_issue(self):
         """New issue (< 1 year) gets no reactivation bonus."""
-        from script import calculate_priority_score
+        from terraform_issues_analyzer.cli import calculate_priority_score
 
         base = self._make_base_issue()
         base["age_days"] = 180
@@ -1041,7 +1041,7 @@ class TestPriorityScoring(unittest.TestCase):
 
     def test_reactivation_bonus_zero_for_stale_old_issue(self):
         """Old issue with no recent activity gets no reactivation bonus."""
-        from script import calculate_priority_score
+        from terraform_issues_analyzer.cli import calculate_priority_score
 
         base = self._make_base_issue()
         base["age_days"] = 730
@@ -1053,7 +1053,7 @@ class TestPriorityScoring(unittest.TestCase):
 
     def test_ultra_age_bonus_for_5_year_issue(self):
         """A 5-year-old issue scores higher than a 2-year-old identical issue."""
-        from script import calculate_priority_score
+        from terraform_issues_analyzer.cli import calculate_priority_score
 
         base = self._make_base_issue()
         base["age_days"] = 730  # 2 years
@@ -1064,7 +1064,7 @@ class TestPriorityScoring(unittest.TestCase):
 
     def test_ultra_age_bonus_zero_under_3_years(self):
         """Issues under 3 years get no ultra-age bonus."""
-        from script import calculate_priority_score
+        from terraform_issues_analyzer.cli import calculate_priority_score
 
         base = self._make_base_issue()
         base["age_days"] = 1000  # ~2.7 years
@@ -1076,7 +1076,7 @@ class TestPriorityScoring(unittest.TestCase):
 
     def test_ultra_age_bonus_capped_at_8(self):
         """Ultra-age bonus never exceeds 8 points regardless of age."""
-        from script import calculate_priority_score
+        from terraform_issues_analyzer.cli import calculate_priority_score
 
         base = self._make_base_issue()
         # Force neglect factor to its cap in both cases to isolate ultra-age behavior.
@@ -1092,15 +1092,15 @@ class TestPriorityScoring(unittest.TestCase):
 class TestModuleEntryPoint(unittest.TestCase):
     """Tests for module entry point behavior."""
 
-    @patch('script.main')
-    @patch('script.sys.exit')
+    @patch('terraform_issues_analyzer.cli.main')
+    @patch('terraform_issues_analyzer.cli.sys.exit')
     def test_entry_point_calls_main(self, mock_exit, mock_main):
         """Test that running module as script calls main()."""
         mock_main.return_value = 0
         
         # Simulate running as __main__
         # This is tricky to test directly, so we verify the structure exists
-        import script
+        import terraform_issues_analyzer.cli as script
         self.assertTrue(hasattr(script, 'main'))
         self.assertTrue(callable(script.main))
 

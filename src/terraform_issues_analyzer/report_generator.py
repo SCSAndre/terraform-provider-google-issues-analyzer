@@ -3,53 +3,21 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, TextIO
 
-from config import OUTPUT_DIR
-from html_report_generator import generate_html_report
-from types_definitions import IssueData
-from utils import format_age
+from .config import OUTPUT_DIR
+from .html_report_generator import generate_html_report
+from .report_logic import (
+    is_entry_point as _is_entry_point,
+    get_entry_point_reason as _entry_point_reason,
+    get_recently_reactivated_issues,
+)
+from .types_definitions import IssueData
+from .utils import format_age
 
 logger = logging.getLogger(__name__)
-
-
-def _is_entry_point(issue: Dict[str, Any]) -> bool:
-    """Return True if this issue qualifies as a contributor entry point."""
-    if issue.get("confidence_band") != "HIGH":
-        return False
-    if issue.get("is_blocked", False):
-        return False
-    labels = [label.lower() for label in issue.get("labels", [])]
-    if "breaking-change" in labels:
-        return False
-    lt = issue.get("label_types", {})
-    if "new-resource" in labels or lt.get("new_resource", False):
-        return False
-    has_effort_signal = (
-        any(size in labels for size in ("size/xs", "size/s"))
-        or lt.get("has_pr", False)
-        or lt.get("documentation", False)
-    )
-    if not has_effort_signal:
-        return False
-    return issue.get("is_internally_tracked", False) or issue.get("priority_score", 0) >= 65
-
-
-def _entry_point_reason(issue: Dict[str, Any]) -> str:
-    """Return concise rationale for entry-point eligibility."""
-    labels = [label.lower() for label in issue.get("labels", [])]
-    lt = issue.get("label_types", {})
-    if lt.get("has_pr", False):
-        return "Finish existing PR"
-    if lt.get("documentation", False):
-        return "Docs fix"
-    if "size/xs" in labels:
-        return "Tiny scope (xs)"
-    if "size/s" in labels:
-        return "Small scope (s)"
-    return "Actionable"
 
 
 class ReportGenerator:
@@ -115,7 +83,7 @@ def generate_analysis_reports(
         Mapping with markdown and html report output paths.
     """
     report_path = output_dir / "terraform_target_services_issues_report_en.md"
-    now = datetime.now()
+    now = datetime.now(timezone.utc)
 
     with open(report_path, "w", encoding="utf-8") as report_file:
         report_file.write("# Terraform Provider Google - Issues Analysis Report\n\n")
@@ -322,21 +290,7 @@ def write_priority_recommendations(report_file: TextIO, issues: List[Dict[str, A
 
 def write_recently_reactivated(report_file: TextIO, issues: List[Dict[str, Any]]) -> None:
     """Write recently reactivated issues section."""
-    reactivated = [
-        issue
-        for issue in issues
-        if issue.get("age_days", 0) > 365
-        and issue.get("days_since_update", 0) < 90
-        and issue.get("reactivation_bonus", 0) > 0
-        and not (
-            issue.get("label_types", {}).get("has_pr")
-            or issue.get("label_types", {}).get("good_first_issue")
-        )
-    ]
-    reactivated = sorted(
-        reactivated,
-        key=lambda issue: (-issue.get("reactivation_bonus", 0), issue.get("days_since_update", 0)),
-    )[:10]
+    reactivated = get_recently_reactivated_issues(issues)
 
     report_file.write("## 🔄 Recently Reactivated Issues\n\n")
 

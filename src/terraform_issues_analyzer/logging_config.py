@@ -11,7 +11,7 @@ import logging
 import json
 import sys
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional, Dict, Any
 from contextvars import ContextVar
 from functools import wraps
@@ -56,7 +56,7 @@ class StructuredFormatter(logging.Formatter):
     def format(self, record: logging.LogRecord) -> str:
         """Format the log record as JSON."""
         log_entry: Dict[str, Any] = {
-            "timestamp": datetime.utcnow().isoformat() + "Z",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "level": record.levelname,
             "logger": record.name,
             "message": record.getMessage(),
@@ -125,7 +125,7 @@ class ConsoleFormatter(logging.Formatter):
             color = self.COLORS.get(level, '')
             level = f"{color}{level}{self.RESET}"
         
-        timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        timestamp = datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S')
         return f"{timestamp} | {level:8} | {cid_str}{record.name}: {record.getMessage()}"
 
 

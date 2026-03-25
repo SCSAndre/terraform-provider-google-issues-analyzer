@@ -13,7 +13,7 @@ from io import StringIO
 from unittest.mock import patch, MagicMock
 from datetime import datetime
 
-from logging_config import (
+from terraform_issues_analyzer.logging_config import (
     setup_logging,
     get_logger,
     StructuredFormatter,

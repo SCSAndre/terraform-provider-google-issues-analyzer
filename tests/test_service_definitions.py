@@ -1,6 +1,6 @@
 """Tests for service scope definitions."""
 
-from service_definitions import (
+from terraform_issues_analyzer.service_definitions import (
     get_critical_keywords,
     get_service_terms,
     get_supported_service_categories,

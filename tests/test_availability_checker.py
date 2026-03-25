@@ -1,7 +1,7 @@
 """Comprehensive tests for availability checking functionality."""
 import unittest
 from unittest.mock import Mock
-from availability_checker import AvailabilityChecker
+from terraform_issues_analyzer.availability_checker import AvailabilityChecker
 
 
 class TestAvailabilityCheckerAssignees(unittest.TestCase):

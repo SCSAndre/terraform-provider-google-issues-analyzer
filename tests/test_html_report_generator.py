@@ -4,7 +4,7 @@ import unittest
 import tempfile
 from pathlib import Path
 
-from html_report_generator import (
+from terraform_issues_analyzer.html_report_generator import (
     format_age,
     calculate_statistics,
     generate_html_report,

@@ -113,7 +113,15 @@ INITIAL_BACKOFF: int = 2
 
 #: Directory for storing generated reports
 OUTPUT_DIR: Path = Path(os.getenv("OUTPUT_DIR", "analysis_results"))
-OUTPUT_DIR.mkdir(exist_ok=True)
+
+
+def ensure_output_dir() -> None:
+    """Create the output directory if it doesn't exist.
+
+    Call this explicitly from main() rather than at import time to avoid
+    side effects during testing, documentation builds, and REPL usage.
+    """
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 
 # =============================================================================
@@ -204,7 +212,7 @@ def validate_config(raise_on_error: bool = False) -> Dict[str, Any]:
         ...     for error in result['errors']:
         ...         print(f"Error: {error}")
     """
-    from exceptions import ConfigurationError
+    from .exceptions import ConfigurationError
     
     errors: List[str] = []
     warnings: List[str] = []

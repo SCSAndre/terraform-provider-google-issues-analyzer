@@ -1,6 +1,6 @@
 """Tests for input validation utilities."""
 import unittest
-from validators import IssueValidator, sanitize_for_markdown
+from terraform_issues_analyzer.validators import IssueValidator, sanitize_for_markdown
 
 
 class TestIssueValidatorBasic(unittest.TestCase):

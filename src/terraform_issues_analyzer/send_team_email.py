@@ -15,7 +15,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import List
 
-from config import (
+from .config import (
     get_team_emails,
     SMTP_SERVER,
     SMTP_PORT,
@@ -23,7 +23,7 @@ from config import (
     SMTP_PASSWORD,
     EMAIL_FROM,
 )
-from logging_config import get_logger
+from .logging_config import get_logger
 
 
 logger = get_logger(__name__)

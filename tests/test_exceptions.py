@@ -7,7 +7,7 @@ ensuring proper initialization, message formatting, and inheritance.
 import pytest
 from datetime import datetime
 
-from exceptions import (
+from terraform_issues_analyzer.exceptions import (
     IssueAnalyzerError,
     GitHubAPIError,
     RateLimitExceededError,

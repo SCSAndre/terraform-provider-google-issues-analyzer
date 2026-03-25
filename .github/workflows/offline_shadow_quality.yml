@@ -73,6 +73,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements-dev.txt
+          pip install -e .
 
       - name: Resolve runtime parameters
         shell: bash
@@ -94,7 +95,7 @@ jobs:
       - name: Run offline shadow evaluation (informational)
         if: ${{ github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && inputs.enforce_gate == false) }}
         run: |
-          python evaluate_classifier_quality.py \
+          python -m terraform_issues_analyzer.evaluate_classifier_quality \
             --input "$DATASET_PATH" \
             --split "$SPLIT" \
             --output analysis_results/offline_shadow_quality.json
@@ -102,7 +103,7 @@ jobs:
       - name: Run offline shadow evaluation (quality gate)
         if: ${{ github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.enforce_gate == true) }}
         run: |
-          python evaluate_classifier_quality.py \
+          python -m terraform_issues_analyzer.evaluate_classifier_quality \
             --input "$DATASET_PATH" \
             --split "$SPLIT" \
             --output analysis_results/offline_shadow_quality.json \

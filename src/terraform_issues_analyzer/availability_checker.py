@@ -3,7 +3,7 @@ import re
 import logging
 from typing import Dict, List, Tuple, Optional
 
-from github_client import GitHubClient
+from .github_client import GitHubClient
 
 logger = logging.getLogger(__name__)
 
