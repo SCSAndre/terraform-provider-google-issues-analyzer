@@ -221,7 +221,7 @@ class TestSetupLogging:
         # Root logger should have DEBUG level
         assert logging.getLogger().level <= logging.DEBUG
 
-    def test_log_file_setup(self):
+    def test_log_file_Setup(self):
         """Test logging to file."""
         import tempfile
         
@@ -245,9 +245,15 @@ class TestSetupLogging:
             # Check file has content
             with open(log_file, 'r') as f:
                 content = f.read()
-                # File should have some content (may be empty if async)
+                assert len(content) > 0
         finally:
-            os.unlink(log_file)
+            for handler in logging.getLogger().handlers:
+                handler.close()
+            logging.getLogger().handlers.clear()
+            try:
+                os.unlink(log_file)
+            except OSError:
+                pass
 
 
 class TestGetLogger:

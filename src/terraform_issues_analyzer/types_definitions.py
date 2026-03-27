@@ -40,3 +40,4 @@ class IssueData(TypedDict):
     actionable: bool
     related_categories: List[str]
     priority_score: float
+    thumbs_up: int

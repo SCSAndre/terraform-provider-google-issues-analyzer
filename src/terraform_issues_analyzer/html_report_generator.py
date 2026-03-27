@@ -5,6 +5,7 @@ Generates professional HTML reports with interactive charts and styling.
 """
 
 import json
+from html import escape
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
@@ -12,6 +13,7 @@ from typing import Any, Dict, List, Optional, Union
 from .config import HIGH_CONFIDENCE_THRESHOLD, MEDIUM_CONFIDENCE_THRESHOLD, MIN_CONFIDENCE_THRESHOLD
 from .types_definitions import IssueData
 from .utils import format_age
+from .report_logic import is_contributor_safe, is_entry_point, get_entry_point_reason, get_recently_reactivated_issues
 
 
 def generate_html_report(
@@ -111,48 +113,6 @@ def _is_recaptcha_issue(issue: Dict[str, Any]) -> bool:
     )
 
 
-def _is_contributor_safe(issue: Dict[str, Any]) -> bool:
-    """Return True when issue is safe to present as a contributor entry point."""
-    return not issue.get("is_blocked", False)
-
-
-def _is_entry_point(issue: Dict[str, Any]) -> bool:
-    """Return True if this issue qualifies as a contributor entry point."""
-    if issue.get("confidence_band") != "HIGH":
-        return False
-    if issue.get("is_blocked", False):
-        return False
-    labels = [label.lower() for label in issue.get("labels", [])]
-    if "breaking-change" in labels:
-        return False
-    lt = issue.get("label_types", {})
-    if "new-resource" in labels or lt.get("new_resource", False):
-        return False
-    has_effort_signal = (
-        any(size in labels for size in ("size/xs", "size/s"))
-        or lt.get("has_pr", False)
-        or lt.get("documentation", False)
-    )
-    if not has_effort_signal:
-        return False
-    return issue.get("is_internally_tracked", False) or issue.get("priority_score", 0) >= 65
-
-
-def _get_entry_point_reason(issue: Dict[str, Any]) -> str:
-    """Return short qualifier text for contributor entry points."""
-    labels = [label.lower() for label in issue.get("labels", [])]
-    lt = issue.get("label_types", {})
-    if lt.get("has_pr", False):
-        return "Finish existing PR"
-    if lt.get("documentation", False):
-        return "Docs fix"
-    if "size/xs" in labels:
-        return "Tiny scope (xs)"
-    if "size/s" in labels:
-        return "Small scope (s)"
-    return "Actionable"
-
-
 def _get_blocking_badges(issue: Dict[str, Any]) -> List[str]:
     """Return blocking badges for issues with permanent external blockers."""
     badges: List[str] = []
@@ -187,25 +147,6 @@ def _get_tracking_badges(issue: Dict[str, Any]) -> List[str]:
             '<span class="badge badge-tracked" title="Tracked in HashiCorp internal backlog">🔖 Tracked</span>'
         )
     return badges
-
-
-def _get_recently_reactivated_issues(issues: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """Return recently reactivated issues using report-specific business rules."""
-    reactivated = [
-        issue
-        for issue in issues
-        if issue.get("age_days", 0) > 365
-        and issue.get("days_since_update", 0) < 90
-        and issue.get("reactivation_bonus", 0) > 0
-        and not (
-            issue.get("label_types", {}).get("has_pr")
-            or issue.get("label_types", {}).get("good_first_issue")
-        )
-    ]
-    return sorted(
-        reactivated,
-        key=lambda issue: (-issue.get("reactivation_bonus", 0), issue.get("days_since_update", 0)),
-    )[:10]
 
 
 def calculate_statistics(issues: List[IssueData]) -> Dict[str, Any]:
@@ -314,14 +255,25 @@ def generate_html_content(issues: List[Dict[str, Any]], stats: Dict[str, Any]) -
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Terraform Provider Google - Issues Analysis Report</title>
+    <script>
+        const savedTheme = localStorage.getItem('theme') || 'light';
+        document.documentElement.setAttribute('data-theme', savedTheme);
+        function toggleTheme() {{
+            const current = document.documentElement.getAttribute('data-theme');
+            const target = current === 'dark' ? 'light' : 'dark';
+            document.documentElement.setAttribute('data-theme', target);
+            localStorage.setItem('theme', target);
+        }}
+    </script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     {get_css_styles()}
 </head>
 <body>
     <div class="container">
-        <header>
+        <header style="position: relative;">
+            <button class="theme-toggle" onclick="toggleTheme()">🌓 Toggle Theme</button>
             <h1>🔍 Terraform Provider Google</h1>
-            <h2>Issues Analysis Report</h2>
+            <p class="subtitle">Open Issues Analysis Report</p>
             <p class="timestamp">Generated: {timestamp}</p>
             <p class="meta">Total Issues Analyzed: <strong>{stats['total']}</strong> | Confidence Threshold: ≥{MIN_CONFIDENCE_THRESHOLD}%</p>
         </header>
@@ -378,6 +330,36 @@ def get_css_styles() -> str:
             --text-color: #1e293b;
             --text-muted: #64748b;
             --border-color: #e2e8f0;
+        }
+        
+        [data-theme='dark'] {
+            --bg-color: #0f172a;
+            --card-bg: #1e293b;
+            --text-color: #f1f5f9;
+            --text-muted: #94a3b8;
+            --border-color: #334155;
+            --primary-color: #8b5cf6;
+            --primary-light: #6d28d9;
+        }
+        
+        .theme-toggle {
+            position: absolute;
+            top: 0;
+            right: 0;
+            background: var(--card-bg);
+            border: 1px solid var(--border-color);
+            color: var(--text-color);
+            padding: 0.5rem 1rem;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            transition: all 0.2s;
+        }
+        .theme-toggle:hover {
+            border-color: var(--primary-color);
         }
         
         * {
@@ -962,7 +944,7 @@ def generate_quick_wins_html(issues: List[Dict[str, Any]]) -> str:
     
     rows = ''
     for issue in issues:
-        title = issue['title'][:60] + '...' if len(issue['title']) > 60 else issue['title']
+        raw_t = issue.get('title', ''); title = escape(raw_t[:60] + '...' if len(raw_t) > 60 else raw_t)
         confidence_band = get_issue_confidence_band(issue)
         subcategory_badge = '<span class="subcategory-badge recaptcha-badge">🔑 reCAPTCHA</span>' if _is_recaptcha_issue(issue) else ''
         reason = []
@@ -1017,7 +999,7 @@ def generate_quick_wins_html(issues: List[Dict[str, Any]]) -> str:
 
 def generate_contributor_entry_points_html(issues: List[Dict[str, Any]]) -> str:
     """Generate curated contributor entry points section."""
-    entry_points = [issue for issue in issues if _is_entry_point(issue)]
+    entry_points = [issue for issue in issues if is_entry_point(issue)]
     entry_points = sorted(entry_points, key=lambda issue: issue.get("priority_score", 0), reverse=True)[:8]
 
     if not entry_points:
@@ -1030,10 +1012,10 @@ def generate_contributor_entry_points_html(issues: List[Dict[str, Any]]) -> str:
 
     rows = ''
     for issue in entry_points:
-        title = issue['title'][:60] + '...' if len(issue['title']) > 60 else issue['title']
+        raw_t = issue.get('title', ''); title = escape(raw_t[:60] + '...' if len(raw_t) > 60 else raw_t)
         confidence_band = get_issue_confidence_band(issue)
         subcategory_badge = '<span class="subcategory-badge recaptcha-badge">🔑 reCAPTCHA</span>' if _is_recaptcha_issue(issue) else ''
-        why = _get_entry_point_reason(issue)
+        why = get_entry_point_reason(issue)
 
         type_badges = [
             '<span class="badge badge-bug">🐛 Bug</span>'
@@ -1086,7 +1068,7 @@ def generate_attention_needed_html(issues: List[Dict[str, Any]]) -> str:
     
     rows = ''
     for issue in issues:
-        title = issue['title'][:60] + '...' if len(issue['title']) > 60 else issue['title']
+        raw_t = issue.get('title', ''); title = escape(raw_t[:60] + '...' if len(raw_t) > 60 else raw_t)
         confidence_band = get_issue_confidence_band(issue)
         subcategory_badge = '<span class="subcategory-badge recaptcha-badge">🔑 reCAPTCHA</span>' if _is_recaptcha_issue(issue) else ''
         type_badges = [
@@ -1134,7 +1116,7 @@ def generate_top_issues_html(issues: List[Dict[str, Any]]) -> str:
     """Generate the top priority issues section."""
     rows = ''
     for i, issue in enumerate(issues, 1):
-        title = issue['title'][:55] + '...' if len(issue['title']) > 55 else issue['title']
+        raw_t = issue.get('title', ''); title = escape(raw_t[:55] + '...' if len(raw_t) > 55 else raw_t)
         priority = issue.get('priority_score', 0)
         confidence_band = get_issue_confidence_band(issue)
         subcategory_badge = '<span class="subcategory-badge recaptcha-badge">🔑 reCAPTCHA</span>' if _is_recaptcha_issue(issue) else ''
@@ -1152,7 +1134,7 @@ def generate_top_issues_html(issues: List[Dict[str, Any]]) -> str:
             badges.append('<span class="badge badge-pr">🔗 PR</span>')
         badges.extend(_get_blocking_badges(issue))
         
-        badges_html = ' '.join(badges)
+        badges_html = ' '.join(badges);
         
         rows += f'''
             <tr data-band="{confidence_band}">
@@ -1194,11 +1176,11 @@ def generate_top_issues_html(issues: List[Dict[str, Any]]) -> str:
 
 def generate_recently_reactivated_html(issues: List[Dict[str, Any]]) -> str:
     """Generate the recently reactivated section."""
-    reactivated_issues = _get_recently_reactivated_issues(issues)
+    reactivated_issues = get_recently_reactivated_issues(issues)
 
     rows = ''
     for issue in reactivated_issues:
-        title = issue['title'][:60] + '...' if len(issue['title']) > 60 else issue['title']
+        raw_t = issue.get('title', ''); title = escape(raw_t[:60] + '...' if len(raw_t) > 60 else raw_t)
         confidence_band = get_issue_confidence_band(issue)
         type_badges = [
             '<span class="badge badge-bug">🐛 Bug</span>'
@@ -1268,7 +1250,7 @@ def generate_category_sections_html(by_category: Dict[str, List[Dict[str, Any]]]
         
         rows = ''
         for issue in sorted_issues:
-            title = issue['title'][:50] + '...' if len(issue['title']) > 50 else issue['title']
+            title = escape(issue.get('title', ''))[:50] + '...' if len(issue['title']) > 50 else issue['title']
             priority = issue.get('priority_score', 0)
             confidence_band = get_issue_confidence_band(issue)
             subcategory_badge = '<span class="subcategory-badge recaptcha-badge">🔑 reCAPTCHA</span>' if _is_recaptcha_issue(issue) else ''
@@ -1291,7 +1273,7 @@ def generate_category_sections_html(by_category: Dict[str, List[Dict[str, Any]]]
             if issue.get("label_types", {}).get("has_pr"):
                 status_icons.append('🔗')
             
-            status_html = ' '.join(status_icons)
+            status_html = ' '.join(status_icons);
             
             rows += f'''
                 <tr data-band="{confidence_band}">

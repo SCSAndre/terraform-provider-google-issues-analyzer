@@ -119,8 +119,8 @@ jobs:
     - name: Run Bandit security linter
       run: |
         # Quote exclusion pattern to avoid shell expansion into positional args.
-        bandit -r . -x './test_*.py' -f json -o bandit-report.json || true
-        bandit -r . -x './test_*.py' || true
+        bandit -r . -x './test_*.py' -f json -o bandit-report.json
+        bandit -r . -x './test_*.py'
 
     - name: Check dependencies for vulnerabilities
       run: |

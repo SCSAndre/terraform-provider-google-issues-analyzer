@@ -189,7 +189,7 @@ warn_return_any = false
 # =============================================================================
 
 [tool.pytest.ini_options]
-addopts = "--cov=src/terraform_issues_analyzer --cov-report=term-missing --cov-fail-under=70 -v"
+addopts = "--cov=src/terraform_issues_analyzer --cov-report=term-missing --cov-fail-under=80 -v"
 testpaths = ["tests"]
 
 
