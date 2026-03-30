@@ -31,7 +31,7 @@ pip install -q -r requirements.txt
 # Run the analysis
 echo ""
 echo "Running issue analysis..."
-python3 script.py
+python3 -m terraform_issues_analyzer.cli
 
 echo ""
 echo "Analysis complete! Check the analysis_results directory for the report."

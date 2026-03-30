@@ -20,55 +20,6 @@ from .utils import format_age
 logger = logging.getLogger(__name__)
 
 
-class ReportGenerator:
-    """Handles report generation in various formats."""
-
-    def generate_markdown_report(
-        self,
-        issues: List[Dict[str, Any]],
-        output_file: str = "terraform_target_services_issues_report_en.md",
-    ) -> None:
-        """Generates markdown report of relevant issues."""
-        report_path = OUTPUT_DIR / output_file
-
-        with open(report_path, "w", encoding="utf-8") as report_file:
-            self._write_header(report_file, len(issues))
-            self._write_issues_by_category(report_file, issues)
-
-        logger.info("Report generated at %s", report_path)
-
-    def _write_header(self, report_file: TextIO, total_issues: int) -> None:
-        """Writes report header."""
-        report_file.write("# Terraform Provider Google - Available Issues Report\n\n")
-        report_file.write(f"**Total Issues Found:** {total_issues}\n\n")
-
-    def _write_issues_by_category(self, report_file: TextIO, issues: List[Dict[str, Any]]) -> None:
-        """Groups and writes issues by category."""
-        by_category = self._group_by_category(issues)
-
-        for category, cat_issues in by_category.items():
-            report_file.write(f"## {category} ({len(cat_issues)} issues)\n\n")
-            self._write_category_issues(report_file, cat_issues)
-
-    def _group_by_category(self, issues: List[Dict[str, Any]]) -> Dict[str, List[Dict[str, Any]]]:
-        """Groups issues by category."""
-        by_category: Dict[str, List[Dict[str, Any]]] = {}
-        for issue in issues:
-            category = issue["category"]
-            by_category.setdefault(category, []).append(issue)
-        return by_category
-
-    def _write_category_issues(self, report_file: TextIO, issues: List[Dict[str, Any]]) -> None:
-        """Writes issues for a specific category."""
-        sorted_issues = sorted(issues, key=lambda value: value["confidence"], reverse=True)
-
-        for issue in sorted_issues:
-            report_file.write(f"### #{issue['number']}: {issue['title']}\n\n")
-            report_file.write(f"- **Confidence:** {issue['confidence']:.1f}%\n")
-            report_file.write(f"- **URL:** {issue['url']}\n")
-            report_file.write(f"- **Created:** {issue['created_at']}\n")
-            report_file.write(f"- **Comments:** {issue['comments']}\n\n")
-
 
 def generate_analysis_reports(
     issues: List[IssueData], output_dir: Path = OUTPUT_DIR

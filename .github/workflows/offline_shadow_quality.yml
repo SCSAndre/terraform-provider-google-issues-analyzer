@@ -3,10 +3,10 @@ name: Offline Shadow Quality
 on:
   pull_request:
     paths:
-      - "issue_classifier.py"
-      - "offline_evaluator.py"
-      - "service_definitions.py"
-      - "config.py"
+      - "src/terraform_issues_analyzer/issue_classifier.py"
+      - "src/terraform_issues_analyzer/offline_evaluator.py"
+      - "src/terraform_issues_analyzer/service_definitions.py"
+      - "src/terraform_issues_analyzer/config.py"
       - "docs/labeled_issues_template.txt"
       - "docs/dataset_governance.txt"
       - ".github/workflows/offline_shadow_quality.yml"
@@ -120,4 +120,3 @@ jobs:
           path: analysis_results/offline_shadow_quality.json
           retention-days: 30
           if-no-files-found: warn
-

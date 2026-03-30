@@ -25,6 +25,8 @@ import os
 from pathlib import Path
 from typing import List, Dict, Any
 
+from .secrets_provider import get_secret
+
 
 def _get_bool_env(var_name: str, default: bool = False) -> bool:
     """Parse a boolean environment variable with a safe default."""
@@ -52,7 +54,7 @@ def _get_float_env(var_name: str, default: float) -> float:
 #: GitHub personal access token for API authentication.
 #: Without a token, API requests are limited to 60/hour.
 #: With a token, the limit increases to 5000/hour.
-GITHUB_TOKEN: str | None = os.getenv("GITHUB_TOKEN")
+GITHUB_TOKEN: str | None = get_secret("GITHUB_TOKEN")
 
 #: Target repository in "owner/repo" format
 TARGET_REPO: str = os.getenv("TARGET_REPO", "hashicorp/terraform-provider-google")
@@ -72,10 +74,10 @@ HIGH_CONFIDENCE_THRESHOLD: int = 85
 MEDIUM_CONFIDENCE_THRESHOLD: int = 75
 
 #: Weight factor for TF-IDF similarity scores (0.0-1.0)
-TFIDF_WEIGHT: float = 0.7
+TFIDF_WEIGHT: float = _get_float_env("TFIDF_WEIGHT", 0.7)
 
 #: Weight factor for regex matching scores (0.0-1.0)
-REGEX_WEIGHT: float = 0.3
+REGEX_WEIGHT: float = _get_float_env("REGEX_WEIGHT", 0.3)
 
 #: Enable trigram shadow scoring comparison without changing final decisions.
 ENABLE_TRIGRAM_SHADOW_MODE: bool = _get_bool_env("ENABLE_TRIGRAM_SHADOW_MODE", False)
@@ -129,19 +131,19 @@ def ensure_output_dir() -> None:
 # =============================================================================
 
 #: SMTP server hostname
-SMTP_SERVER: str = os.getenv('SMTP_SERVER') or 'smtp.gmail.com'
+SMTP_SERVER: str = get_secret('SMTP_SERVER', 'smtp.gmail.com')
 
 #: SMTP server port (587 for TLS, 465 for SSL)
 SMTP_PORT: int = int(os.getenv('SMTP_PORT') or '587')
 
 #: SMTP authentication username
-SMTP_USERNAME: str = os.getenv('SMTP_USERNAME', '')
+SMTP_USERNAME: str = get_secret('SMTP_USERNAME', '')
 
 #: SMTP authentication password (use app password for Gmail)
-SMTP_PASSWORD: str = os.getenv('SMTP_PASSWORD', '')
+SMTP_PASSWORD: str = get_secret('SMTP_PASSWORD', '')
 
 #: Email sender address (defaults to SMTP_USERNAME if not set)
-EMAIL_FROM: str = os.getenv('EMAIL_FROM', '') or SMTP_USERNAME
+EMAIL_FROM: str = get_secret('EMAIL_FROM', SMTP_USERNAME or '')
 
 
 # =============================================================================

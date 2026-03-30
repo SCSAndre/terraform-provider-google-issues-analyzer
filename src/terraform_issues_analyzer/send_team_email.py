@@ -22,6 +22,7 @@ from .config import (
     SMTP_USERNAME,
     SMTP_PASSWORD,
     EMAIL_FROM,
+    OUTPUT_DIR,
 )
 from .logging_config import get_logger
 
@@ -29,9 +30,8 @@ from .logging_config import get_logger
 logger = get_logger(__name__)
 
 # Report configuration
-REPORT_DIR = Path(__file__).parent / "analysis_results"
-REPORT_FILE = REPORT_DIR / "terraform_target_services_issues_report_en.md"
-HTML_REPORT_FILE = REPORT_DIR / "terraform_issues_report.html"
+REPORT_FILE = OUTPUT_DIR / "terraform_target_services_issues_report_en.md"
+HTML_REPORT_FILE = OUTPUT_DIR / "terraform_issues_report.html"
 
 # ============================================================================
 # EMAIL SENDING LOGIC

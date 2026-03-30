@@ -517,6 +517,6 @@ class IssueClassifier:
 
     def _log_scores(self, issue: Dict, scores: Dict[str, float]) -> None:
         """Logs classification scores for debugging."""
-        logger.debug(f"Issue #{issue.get('number')}: {issue.get('title')}")
+        logger.debug("Issue #%s: %s", issue.get('number'), issue.get('title'))
         for category, score in scores.items():
-            logger.debug(f"  - {category}: {score:.2f}%")
+            logger.debug("  - %s: %.2f%%", category, score)

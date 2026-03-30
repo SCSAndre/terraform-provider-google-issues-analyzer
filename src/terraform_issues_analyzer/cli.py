@@ -12,7 +12,7 @@ Usage:
     
 Environment Variables:
     GITHUB_TOKEN: GitHub API token for authentication
-    MIN_CONFIDENCE_THRESHOLD: Minimum confidence score (default: 30)
+    MIN_CONFIDENCE_THRESHOLD: Minimum confidence score (default: 75)
     OUTPUT_DIR: Directory for generated reports (default: analysis_results)
     LOG_LEVEL: Logging level (default: INFO)
     LOG_FORMAT: Logging format - 'json' or 'console' (default: console)
@@ -291,7 +291,7 @@ def analyze_issues(
         if not is_available:
             stats["not_available"] += 1
             logger.debug(
-                f"Issue #{issue['number']} not available: {reason}"
+                "Issue #%s not available: %s", issue['number'], reason
             )
             continue
 
@@ -317,6 +317,13 @@ def analyze_issues(
 
         reactions_data = issue.get("reactions", {})
         thumbs_up = reactions_data.get("+1", 0) if isinstance(reactions_data, dict) else 0
+
+        # Calculate reactivation bonus
+        reactivation_bonus = 0
+        if age_days > 365 and days_since_update < 90:
+            age_factor = min(age_days / 730, 1.0)
+            recency_factor = 1.0 - (days_since_update / 90)
+            reactivation_bonus = round(age_factor * recency_factor * 15)
         
         # Calculate priority score
         priority_score = calculate_priority_score(
@@ -361,6 +368,7 @@ def analyze_issues(
             "actionable": is_actionable,
             "related_categories": related_categories,
             "priority_score": priority_score,
+            "reactivation_bonus": reactivation_bonus,
         }
         relevant_issues.append(issue_data)
         stats["relevant_available"] += 1

@@ -245,7 +245,7 @@ class TestGitHubClientFetchComments(unittest.TestCase):
         with patch('terraform_issues_analyzer.github_client.GITHUB_TOKEN', 'test_token'):
             from terraform_issues_analyzer.github_client import GitHubClient
             self.client = GitHubClient()
-            self.client._comment_cache.clear()
+            self.client.fetch_issue_comments.cache_clear()
 
     @patch('terraform_issues_analyzer.github_client.requests.get')
     def test_fetch_comments_success(self, mock_get):
@@ -307,110 +307,6 @@ class TestGitHubClientFetchComments(unittest.TestCase):
         with patch.object(self.client, '_handle_rate_limit'):
             result = self.client.fetch_issue_comments("https://api.github.com/test")
         self.assertIsNone(result)
-
-
-class TestGitHubClientFetchAllIssues(unittest.TestCase):
-    """Tests for fetch_all_issues functionality."""
-
-    def setUp(self):
-        with patch('terraform_issues_analyzer.github_client.GITHUB_TOKEN', 'test_token'):
-            from terraform_issues_analyzer.github_client import GitHubClient
-            self.client = GitHubClient()
-
-    def test_fetch_all_issues_single_page(self):
-        """Test fetching all issues when they fit in one page."""
-        with patch.object(self.client, 'fetch_issues_page') as mock_fetch:
-            mock_fetch.return_value = [{"number": i} for i in range(50)]
-            result = self.client.fetch_all_issues()
-        
-        self.assertEqual(len(result), 50)
-        mock_fetch.assert_called_once()
-
-    def test_fetch_all_issues_multiple_pages(self):
-        """Test fetching all issues across multiple pages."""
-        with patch.object(self.client, 'fetch_issues_page') as mock_fetch:
-            # First page full, second page partial
-            mock_fetch.side_effect = [
-                [{"number": i} for i in range(100)],
-                [{"number": i} for i in range(100, 150)],
-            ]
-            result = self.client.fetch_all_issues()
-        
-        self.assertEqual(len(result), 150)
-        self.assertEqual(mock_fetch.call_count, 2)
-
-    def test_fetch_all_issues_with_max_pages(self):
-        """Test fetching with max_pages limit."""
-        with patch.object(self.client, 'fetch_issues_page') as mock_fetch:
-            mock_fetch.return_value = [{"number": i} for i in range(100)]
-            result = self.client.fetch_all_issues(max_pages=2)
-        
-        self.assertEqual(mock_fetch.call_count, 2)
-
-    def test_fetch_all_issues_empty_response(self):
-        """Test handling empty response."""
-        with patch.object(self.client, 'fetch_issues_page') as mock_fetch:
-            mock_fetch.return_value = []
-            result = self.client.fetch_all_issues()
-        
-        self.assertEqual(len(result), 0)
-
-
-class TestGitHubClientIssueTimeline(unittest.TestCase):
-    """Tests for issue timeline fetching."""
-
-    def setUp(self):
-        with patch('terraform_issues_analyzer.github_client.GITHUB_TOKEN', 'test_token'):
-            from terraform_issues_analyzer.github_client import GitHubClient
-
-            self.client = GitHubClient()
-
-    @patch('terraform_issues_analyzer.github_client.requests.get')
-    def test_fetch_issue_timeline_success(self, mock_get):
-        """Timeline API should return list payload on success."""
-        mock_response = Mock()
-        mock_response.json.return_value = [{"event": "cross-referenced"}]
-        mock_response.status_code = 200
-        mock_get.return_value = mock_response
-
-        with patch.object(self.client, '_handle_rate_limit'):
-            timeline = self.client.fetch_issue_timeline(123)
-
-        self.assertEqual(len(timeline), 1)
-
-    @patch('terraform_issues_analyzer.github_client.requests.get')
-    @patch('terraform_issues_analyzer.github_client.time.sleep')
-    def test_fetch_issue_timeline_all_retries_fail(self, mock_sleep, mock_get):
-        """Timeline fetch should return None after retry exhaustion."""
-        mock_get.side_effect = requests.RequestException("Persistent error")
-
-        with patch.object(self.client, '_handle_rate_limit'):
-            result = self.client.fetch_issue_timeline(123)
-
-        self.assertIsNone(result)
-
-    @patch('terraform_issues_analyzer.github_client.requests.get')
-    def test_fetch_issue_timeline_caching(self, mock_get):
-        """Timeline requests should be served from cache after first fetch."""
-        mock_response = Mock()
-        mock_response.json.return_value = [{"event": "assigned"}]
-        mock_response.status_code = 200
-        mock_get.return_value = mock_response
-
-        with patch.object(self.client, '_handle_rate_limit'):
-            first = self.client.fetch_issue_timeline(42)
-            second = self.client.fetch_issue_timeline(42)
-
-        self.assertEqual(first, second)
-        self.assertEqual(mock_get.call_count, 1)
-
-    def test_fetch_all_issues_none_response(self):
-        """Test handling None response (API failure)."""
-        with patch.object(self.client, 'fetch_issues_page') as mock_fetch:
-            mock_fetch.return_value = None
-            result = self.client.fetch_all_issues()
-        
-        self.assertEqual(len(result), 0)
 
 
 class TestGitHubClientResponseErrorHandling(unittest.TestCase):

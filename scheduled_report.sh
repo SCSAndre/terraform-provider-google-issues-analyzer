@@ -45,7 +45,7 @@ pip install -q -r requirements.txt >> "$LOG_FILE" 2>&1
 
 # Run the analyzer
 log "Running issue analyzer..."
-python3 "$SCRIPT_DIR/script.py" >> "$LOG_FILE" 2>&1
+python3 -m terraform_issues_analyzer.cli >> "$LOG_FILE" 2>&1
 
 if [ $? -eq 0 ]; then
     log "✓ Report generated successfully!"

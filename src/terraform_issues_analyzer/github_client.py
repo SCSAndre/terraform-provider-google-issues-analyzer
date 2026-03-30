@@ -17,6 +17,7 @@ import requests
 import time
 from typing import Optional, List, Dict, Any
 from datetime import datetime, timezone
+from functools import lru_cache
 from tenacity import (
     RetryError,
     Retrying,
@@ -79,8 +80,6 @@ class GitHubClient:
         self._rate_limit_remaining: Optional[int] = None
         self._rate_limit_reset: Optional[datetime] = None
         self._last_rate_check: float = 0.0
-        self._comment_cache: Dict[str, List[Dict[str, Any]]] = {}
-        self._timeline_cache: Dict[int, List[Dict[str, Any]]] = {}
 
     @staticmethod
     def _is_retryable_exception(exc: BaseException) -> bool:
@@ -332,6 +331,7 @@ class GitHubClient:
 
         return None
 
+    @lru_cache(maxsize=500)
     def fetch_issue_comments(
         self,
         comments_url: str
@@ -346,17 +346,11 @@ class GitHubClient:
         Returns:
             List of comment dictionaries, or None if all retries failed.
         """
-        if comments_url in self._comment_cache:
-            return self._comment_cache[comments_url]
-
         try:
             retrying = self._build_retrying("Fetch issue comments")
             for attempt in retrying:
                 with attempt:
-                    comments = self._fetch_issue_comments_once(comments_url)
-                    if comments is not None:
-                        self._comment_cache[comments_url] = comments
-                    return comments
+                    return self._fetch_issue_comments_once(comments_url)
         except (AuthenticationError, RateLimitExceededError):
             raise
         except (NetworkError, GitHubAPIError, RetryError) as e:
@@ -395,6 +389,7 @@ class GitHubClient:
             return timeline
         return []
 
+    @lru_cache(maxsize=500)
     def fetch_issue_timeline(self, issue_number: int) -> Optional[List[Dict[str, Any]]]:
         """Fetch issue timeline events with retry logic.
 
@@ -404,17 +399,11 @@ class GitHubClient:
         Returns:
             List of timeline events, or None if all retries fail.
         """
-        if issue_number in self._timeline_cache:
-            return self._timeline_cache[issue_number]
-
         try:
             retrying = self._build_retrying("Fetch issue timeline")
             for attempt in retrying:
                 with attempt:
-                    result = self._fetch_issue_timeline_once(issue_number)
-                    if result is not None:
-                        self._timeline_cache[issue_number] = result
-                    return result
+                    return self._fetch_issue_timeline_once(issue_number)
         except (AuthenticationError, RateLimitExceededError):
             raise
         except (NetworkError, GitHubAPIError, RetryError) as e:
@@ -425,52 +414,6 @@ class GitHubClient:
             return None
 
         return None
-
-    @log_performance
-    def fetch_all_issues(
-        self,
-        max_pages: Optional[int] = None,
-        state: str = "open"
-    ) -> List[Dict[str, Any]]:
-        """Fetch all issues with pagination.
-        
-        Args:
-            max_pages: Maximum number of pages to fetch (None for all)
-            state: Issue state filter ("open", "closed", or "all")
-            
-        Returns:
-            List of all fetched issue dictionaries.
-        """
-        all_issues: List[Dict[str, Any]] = []
-        page = 1
-        
-        while True:
-            if max_pages and page > max_pages:
-                break
-                
-            issues = self.fetch_issues_page(page, state=state)
-            
-            if not issues:
-                break
-                
-            all_issues.extend(issues)
-            logger.info(
-                "Progress: %d issues fetched",
-                len(all_issues),
-                extra={"page": page, "total": len(all_issues)}
-            )
-            
-            if len(issues) < 100:
-                break
-                
-            page += 1
-        
-        logger.info(
-            "Completed fetching %d issues",
-            len(all_issues),
-            extra={"pages_fetched": page, "total_issues": len(all_issues)}
-        )
-        return all_issues
 
     def get_rate_limit_status(self) -> Dict[str, Any]:
         """Get current rate limit status.

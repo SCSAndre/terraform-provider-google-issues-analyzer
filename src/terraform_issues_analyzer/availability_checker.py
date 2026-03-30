@@ -1,11 +1,11 @@
 """Checks if issues are available (unclaimed) for work."""
 import re
-import logging
 from typing import Dict, List, Tuple, Optional
 
 from .github_client import GitHubClient
+from .logging_config import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class AvailabilityChecker:

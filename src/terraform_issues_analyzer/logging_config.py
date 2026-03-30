@@ -19,7 +19,16 @@ import time
 
 # Context variable for correlation ID (thread-safe)
 correlation_id_var: ContextVar[str] = ContextVar('correlation_id', default='')
+log_context_var: ContextVar[Dict[str, Any]] = ContextVar('log_context', default={})
 
+_old_factory = logging.getLogRecordFactory()
+def _thread_safe_record_factory(*args, **kwargs):
+    record = _old_factory(*args, **kwargs)
+    for key, value in log_context_var.get().items():
+        setattr(record, key, value)
+    return record
+
+logging.setLogRecordFactory(_thread_safe_record_factory)
 
 def get_correlation_id() -> Optional[str]:
     """Get the current correlation ID.
@@ -211,20 +220,21 @@ def log_performance(func):
     """
     @wraps(func)
     def wrapper(*args, **kwargs):
-        logger = logging.getLogger(func.__module__)
+        # Local logger to avoid global overshadowing if this wrapper is reused
+        log = logging.getLogger(func.__module__)
         start_time = time.perf_counter()
         
         try:
             result = func(*args, **kwargs)
             elapsed = time.perf_counter() - start_time
-            logger.debug(
-                f"{func.__name__} completed in {elapsed*1000:.2f}ms"
+            log.debug(
+                "%s completed in %.2fms", func.__name__, elapsed * 1000
             )
             return result
         except Exception as e:
             elapsed = time.perf_counter() - start_time
-            logger.error(
-                f"{func.__name__} failed after {elapsed*1000:.2f}ms: {e}"
+            log.error(
+                "%s failed after %.2fms: %s", func.__name__, elapsed * 1000, e
             )
             raise
     
@@ -243,8 +253,9 @@ class LogContext:
         self.operation = operation
         self.correlation_id = correlation_id
         self.context = context
-        self.old_factory = None
+        self.context['operation'] = operation
         self.old_correlation_id: str = ''
+        self.token = None
     
     def __enter__(self):
         # Save and set correlation ID
@@ -254,23 +265,15 @@ class LogContext:
         elif not self.old_correlation_id:
             correlation_id_var.set(str(uuid.uuid4())[:8])
         
-        # Set up record factory for context
-        self.old_factory = logging.getLogRecordFactory()
-        context = self.context
-        context['operation'] = self.operation
-        old_factory = self.old_factory
-        
-        def record_factory(*args, **kwargs):
-            record = old_factory(*args, **kwargs)
-            for key, value in context.items():
-                setattr(record, key, value)
-            return record
-        
-        logging.setLogRecordFactory(record_factory)
+        # Update context
+        current_ctx = log_context_var.get().copy()
+        current_ctx.update(self.context)
+        self.token = log_context_var.set(current_ctx)
         return self
     
     def __exit__(self, exc_type, exc_val, exc_tb):
-        logging.setLogRecordFactory(self.old_factory)
+        if self.token:
+            log_context_var.reset(self.token)
         # Restore old correlation ID
         correlation_id_var.set(self.old_correlation_id)
         return False

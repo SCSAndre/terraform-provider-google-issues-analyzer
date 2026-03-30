@@ -25,9 +25,7 @@ Hello Team,
 The weekly Terraform Provider Google issues report is ready!
 
 Please find the report attached. This report includes:
-- Available issues related to Load Balancers
 - Available issues related to Cloud Armor
-- Available issues related to Private Service Connect (PSC)
 
 All issues have been filtered to show only those that are:
 ✓ Currently open
@@ -76,9 +74,7 @@ body = """Hello Team,
 The weekly Terraform Provider Google issues report is ready!
 
 Please find the report attached. This report includes:
-- Available issues related to Load Balancers
 - Available issues related to Cloud Armor
-- Available issues related to Private Service Connect (PSC)
 
 All issues have been filtered to show only those that are:
 ✓ Currently open
