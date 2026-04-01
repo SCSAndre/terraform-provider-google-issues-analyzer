@@ -38,6 +38,21 @@ class TestGitHubClientInitialization(unittest.TestCase):
             self.assertIsNone(client._rate_limit_remaining)
             self.assertIsNone(client._rate_limit_reset)
 
+    def test_init_with_custom_repo(self):
+        """Custom repo parameter is stored on the instance."""
+        with patch('terraform_issues_analyzer.github_client.GITHUB_TOKEN', 'test_token'):
+            from terraform_issues_analyzer.github_client import GitHubClient
+            client = GitHubClient(token='test', repo='org/other-repo')
+            self.assertEqual(client._repo, 'org/other-repo')
+
+    def test_init_default_repo_falls_back_to_config(self):
+        """Without repo kwarg, _repo is TARGET_REPO from config."""
+        with patch('terraform_issues_analyzer.github_client.GITHUB_TOKEN', 'test_token'):
+            with patch('terraform_issues_analyzer.github_client.TARGET_REPO', 'default/repo'):
+                from terraform_issues_analyzer.github_client import GitHubClient
+                client = GitHubClient(token='test')
+                self.assertEqual(client._repo, 'default/repo')
+
 
 class TestGitHubClientRateLimiting(unittest.TestCase):
     """Tests for rate limiting functionality."""

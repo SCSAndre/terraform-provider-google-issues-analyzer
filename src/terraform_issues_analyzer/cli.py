@@ -32,6 +32,7 @@ from typing import Dict, List, Any
 
 from .config import (
     OUTPUT_DIR,
+    TARGET_REPO,
     ENABLE_TRIGRAM_SHADOW_MODE,
     SHADOW_SCORE_DELTA_THRESHOLD,
     validate_config,
@@ -39,9 +40,8 @@ from .config import (
 )
 from .github_client import GitHubClient
 from .issue_classifier import IssueClassifier
-from .issue_classifier import classify_labels
-from .issue_classifier import get_blocking_label_info
 from .availability_checker import AvailabilityChecker
+from .priority_scorer import enrich_issue_data
 from . import report_generator
 from .exceptions import (
     IssueAnalyzerError,
@@ -84,7 +84,7 @@ def main() -> int:
     config_result = validate_config()
     if not config_result['valid']:
         for error in config_result['errors']:
-            logger.error(f"Configuration error: {error}")
+            logger.error("Configuration error: %s", error)
         return 1
     
     # Log warnings
@@ -95,7 +95,7 @@ def main() -> int:
         with LogContext(operation="issue_analysis"):
             # Initialize components
             logger.info("Initializing components")
-            github_client = GitHubClient()
+            github_client = GitHubClient(repo=TARGET_REPO)
             classifier = IssueClassifier()
             availability_checker = AvailabilityChecker(github_client)
 
@@ -132,19 +132,19 @@ def main() -> int:
         
     except ConfigurationError as e:
         logger.error(
-            f"Configuration error: {e}",
+            "Configuration error: %s", e,
             extra={"error_type": "configuration"}
         )
         return 1
     except GitHubAPIError as e:
         logger.error(
-            f"GitHub API error: {e}",
+            "GitHub API error: %s", e,
             extra={"error_type": "github_api", "status_code": e.status_code}
         )
         return 1
     except IssueAnalyzerError as e:
         logger.error(
-            f"Analysis error: {e}",
+            "Analysis error: %s", e,
             extra={"error_type": "analysis"}
         )
         return 1
@@ -153,7 +153,7 @@ def main() -> int:
         return 130
     except Exception as e:
         logger.exception(
-            f"Unexpected error during analysis: {e}",
+            "Unexpected error during analysis: %s", e,
             extra={"error_type": "unexpected"}
         )
         return 1
@@ -176,7 +176,7 @@ def fetch_all_issues(github_client: GitHubClient) -> List[Dict[str, Any]]:
     page = 1
 
     while True:
-        logger.debug(f"Fetching page {page}")
+        logger.debug("Fetching page %d", page)
         issues = github_client.fetch_issues_page(page)
 
         if not issues:
@@ -184,7 +184,7 @@ def fetch_all_issues(github_client: GitHubClient) -> List[Dict[str, Any]]:
 
         all_issues.extend(issues)
         logger.info(
-            f"Progress: fetched {len(all_issues)} issues",
+            "Progress: fetched %d issues", len(all_issues),
             extra={"page": page, "page_size": len(issues)}
         )
 
@@ -219,8 +219,7 @@ def analyze_issues(
     Returns:
         List of enriched issue dictionaries for relevant, available issues.
     """
-    from datetime import datetime
-    
+
     relevant_issues: List[IssueData] = []
     stats = {
         "pull_requests_skipped": 0,
@@ -242,13 +241,14 @@ def analyze_issues(
             continue
 
         # Check relevance - get all matching categories
+        classifier_result = classifier.classify_issue_with_related(issue)
         (
             is_relevant,
             category,
             confidence,
             confidence_band,
             related_categories,
-        ) = classifier.classify_issue_with_related(issue)
+        ) = classifier_result
 
         # Shadow-mode comparison is logging-only and does not alter classification outcomes.
         if ENABLE_TRIGRAM_SHADOW_MODE:
@@ -295,81 +295,8 @@ def analyze_issues(
             )
             continue
 
-        # Parse dates for age calculation
-        created_at = datetime.fromisoformat(issue["created_at"].replace("Z", "+00:00"))
-        updated_at = datetime.fromisoformat(issue["updated_at"].replace("Z", "+00:00"))
-        now = datetime.now(created_at.tzinfo)
-        age_days = (now - created_at).days
-        days_since_update = (now - updated_at).days
-        
-        # Extract label types
-        labels = [label["name"] for label in issue.get("labels", [])]
-        label_types = classify_labels(labels)
-        blocking_info = get_blocking_label_info(labels)
-        is_crash = "crash" in [label.lower() for label in labels]
-        is_breaking_change = "breaking-change" in [label.lower() for label in labels]
-        is_new_resource = "new-resource" in [label.lower() for label in labels]
-        is_internally_tracked = "forward/linked" in [label.lower() for label in labels]
-        is_actionable = label_types.get("actionable", False)
-        
-        # Get assignees
-        assignees = [a["login"] for a in issue.get("assignees", [])]
-
-        reactions_data = issue.get("reactions", {})
-        thumbs_up = reactions_data.get("+1", 0) if isinstance(reactions_data, dict) else 0
-
-        # Calculate reactivation bonus
-        reactivation_bonus = 0
-        if age_days > 365 and days_since_update < 90:
-            age_factor = min(age_days / 730, 1.0)
-            recency_factor = 1.0 - (days_since_update / 90)
-            reactivation_bonus = round(age_factor * recency_factor * 15)
-        
-        # Calculate priority score
-        priority_score = calculate_priority_score(
-            confidence=confidence,
-            confidence_band=confidence_band,
-            comments=issue.get("comments", 0),
-            reactions_plus_one=thumbs_up,
-            age_days=age_days,
-            days_since_update=days_since_update,
-            is_bug=label_types.get("bug", False),
-            is_actionable=is_actionable,
-            has_assignee=len(assignees) > 0,
-            labels=issue.get("labels", []),
-        )
-
-        # Add to results with enriched data
-        issue_data: IssueData = {
-            "number": issue["number"],
-            "title": issue["title"],
-            "url": issue["html_url"],
-            "state": issue.get("state", "open"),
-            "category": category,
-            "confidence": confidence,
-            "confidence_band": confidence_band,
-            "created_at": issue["created_at"],
-            "updated_at": issue["updated_at"],
-            "age_days": age_days,
-            "days_since_update": days_since_update,
-            "comments": issue.get("comments", 0),
-            "thumbs_up": thumbs_up,
-            "labels": labels,
-            "label_types": label_types,
-            "is_exempt": blocking_info["is_exempt"],
-            "is_upstream": blocking_info["is_upstream"],
-            "is_blocked": blocking_info["is_blocked"],
-            "is_crash": is_crash,
-            "is_breaking_change": is_breaking_change,
-            "is_new_resource": is_new_resource,
-            "is_internally_tracked": is_internally_tracked,
-            "assignees": assignees,
-            "is_assigned": len(assignees) > 0,
-            "actionable": is_actionable,
-            "related_categories": related_categories,
-            "priority_score": priority_score,
-            "reactivation_bonus": reactivation_bonus,
-        }
+        # Enrich issue data
+        issue_data = enrich_issue_data(issue, classifier_result)
         relevant_issues.append(issue_data)
         stats["relevant_available"] += 1
 
@@ -385,158 +312,6 @@ def analyze_issues(
         )
     
     return relevant_issues
-
-
-def calculate_priority_score(
-    confidence: float,
-    confidence_band: str,
-    comments: int,
-    reactions_plus_one: int,
-    age_days: int,
-    days_since_update: int,
-    is_bug: bool,
-    is_actionable: bool = False,
-    has_assignee: bool = False,
-    labels: List[Any] | None = None,
-) -> float:
-    """Calculate a priority score for issue ranking.
-
-    Weight breakdown:
-    - Confidence: 40 points max
-    - Comments: 15 points max
-    - Reactions: 15 points max
-    - Neglect (age + staleness): 20 points max
-    - ultra-age bonus: +3 to +8 for issues older than 3 years
-    - reactivation: old issue (>1y) with recent activity (<90d), max +15
-    - Bug bonus: 5 points
-    - Breaking change penalty: -5 points
-    - New resource penalty: -3 points
-    - crash bonus: +15 points when issue has the "crash" label
-    - Actionable bonus: 5 points
-    - size: maintainer effort estimate label (size/xs=+12, size/s=+10, size/m=+5)
-    - Unassigned bonus: 10 points
-    - High-confidence bonus: 5 points
-
-    Args:
-        confidence: Relevance confidence score from classifier.
-        confidence_band: Confidence band label (HIGH, REVIEW, EXCLUDED).
-        comments: Number of issue comments.
-        reactions_plus_one: Community thumbs-up count (+1 reactions), capped at 30.
-        age_days: Days since issue creation.
-        days_since_update: Days since last issue update.
-        is_bug: True when issue has bug-like labels.
-        is_actionable: True when issue has newcomer-friendly actionable labels.
-        has_assignee: True when issue already has an assignee.
-        labels: Raw GitHub labels list (dicts with name or plain strings).
-    
-    Returns:
-        Priority score from 0-100
-    """
-    score = 0.0
-    
-    # Confidence contributes 40%
-    score += (confidence / 100) * 40
-    
-    # Comments contribute 15% (cap at 20 comments)
-    comment_factor = min(comments, 20) / 20
-    score += comment_factor * 15
-
-    thumbs_up = max(int(reactions_plus_one), 0)
-    # Reactions factor: community demand signal (+1 count), weight 15%
-    # Cap at 30 reactions to avoid a single viral issue dominating
-    reactions_factor = min(thumbs_up, 30) / 30 * 15
-    score += reactions_factor
-    
-    # Neglect contributes 20% (weighted blend of age and staleness, cap at 2 years)
-    neglect_days = min((age_days * 0.3) + (days_since_update * 0.7), 730)
-    score += (neglect_days / 730) * 20
-
-    # Ultra-age bonus: issues that have survived multiple major releases
-    # deserve extra visibility. Soft bonus to avoid over-penalizing new issues.
-    ultra_age_bonus = 0
-    if age_days > 1095:  # > 3 years
-        # Scale: 3y=+3, 4y=+6, 5y=+8 (diminishing returns)
-        years_beyond_3 = (age_days - 1095) / 365
-        ultra_age_bonus = round(min(years_beyond_3 * 3, 8))
-    score += ultra_age_bonus
-
-    # Reactivation bonus: old issue that recently got new activity
-    # Signals upstream API changes, GA announcements, or renewed urgency.
-    # Formula scales by issue age and update recency with a max bonus of +15.
-    reactivation_bonus = 0
-    if age_days > 365 and days_since_update < 90:
-        age_factor = min(age_days / 730, 1.0)
-        recency_factor = 1.0 - (days_since_update / 90)
-        reactivation_bonus = round(age_factor * recency_factor * 15)
-    score += reactivation_bonus
-    
-    # Bug bonus: 5%
-    if is_bug:
-        score += 5
-
-    is_breaking_change = any(
-        (label.get("name", label) if isinstance(label, dict) else label).lower() == "breaking-change"
-        for label in (labels or [])
-    )
-    is_new_resource = any(
-        (label.get("name", label) if isinstance(label, dict) else label).lower() == "new-resource"
-        for label in (labels or [])
-    )
-
-    # Breaking change: deprioritize slightly - requires maintainer oversight
-    if is_breaking_change:
-        score -= 5
-
-    # New resource: deprioritize - large scope, not a quick fix
-    if is_new_resource:
-        score -= 3
-
-    # Crash severity bonus: panics and crashes are critical regardless of age
-    is_crash = any(
-        (label.get("name", label) if isinstance(label, dict) else label).lower() == "crash"
-        for label in (labels or [])
-    )
-    if is_crash:
-        score += 15
-
-    # Actionable bonus: 5%
-    if is_actionable:
-        score += 5
-    
-    # Unassigned bonus: 10% (needs someone to pick it up)
-    if not has_assignee:
-        score += 10
-
-    # High-confidence issues get a small ranking bonus.
-    if confidence_band == "HIGH":
-        score += 5
-
-    # Size bonus: maintainer effort estimate from size/* labels
-    size_bonus = 0
-    label_names: List[str] = []
-    for label in labels or []:
-        if isinstance(label, dict):
-            label_name = str(label.get("name") or "").strip().lower()
-        elif isinstance(label, str):
-            label_name = label.strip().lower()
-        else:
-            label_name = ""
-        if label_name:
-            label_names.append(label_name)
-
-    if "size/xs" in label_names:
-        size_bonus = 12
-    elif "size/s" in label_names:
-        size_bonus = 10
-    elif "size/m" in label_names:
-        size_bonus = 5
-    elif "size/xl" in label_names:
-        size_bonus = -3
-
-    score += size_bonus
-    
-    return max(0, min(score, 95))
-
 
 def generate_report(issues: List[IssueData]) -> None:
     """Generate reports by delegating report writing to report_generator.py."""

@@ -7,9 +7,10 @@ This module provides a robust GitHub API client that handles:
 - Request/response logging with correlation IDs
 
 Example:
-    >>> from github_client import GitHubClient
+    >>> from terraform_issues_analyzer.github_client import GitHubClient
+    >>> from terraform_issues_analyzer.cli import fetch_all_issues
     >>> client = GitHubClient()
-    >>> issues = client.fetch_all_issues()
+    >>> issues = fetch_all_issues(client)
     >>> print(f"Found {len(issues)} issues")
 """
 
@@ -60,14 +61,19 @@ class GitHubClient:
         ...     print(f"Got {len(page)} issues")
     """
 
-    def __init__(self, token: Optional[str] = None):
+    def __init__(self, token: Optional[str] = None, repo: Optional[str] = None):
         """Initialize the GitHub client.
-        
+
         Args:
             token: Optional GitHub token. If not provided, uses GITHUB_TOKEN
                 from config.
+            repo: Optional target repository in ``owner/name`` format.
+                Defaults to TARGET_REPO from config, enabling backwards-
+                compatible single-repo usage while supporting multi-repo
+                scenarios in the same process.
         """
         self._token = token or GITHUB_TOKEN
+        self._repo = repo or TARGET_REPO
         self.headers: Dict[str, str] = {}
         if self._token:
             self.headers["Authorization"] = f"token {self._token}"
@@ -117,7 +123,7 @@ class GitHubClient:
     ) -> List[Dict[str, Any]]:
         """Single API call for one issues page."""
         self._handle_rate_limit()
-        url = f"{self.base_url}/repos/{TARGET_REPO}/issues"
+        url = f"{self.base_url}/repos/{self._repo}/issues"
         params = {"state": state, "per_page": per_page, "page": page}
 
         try:
@@ -137,6 +143,7 @@ class GitHubClient:
         if response.status_code >= 400:
             self._handle_response_error(response, f"Fetching issues page {page}")
 
+        self._update_rate_limit_from_headers(response)
         issues = response.json()
         logger.debug(
             "Fetched page %d",
@@ -160,7 +167,20 @@ class GitHubClient:
         if response.status_code >= 400:
             self._handle_response_error(response, "Fetching comments")
 
+        self._update_rate_limit_from_headers(response)
         return response.json()
+
+    def _update_rate_limit_from_headers(self, response: requests.Response) -> None:
+        """Update rate limit state from response headers (zero-cost)."""
+        remaining = response.headers.get('X-RateLimit-Remaining')
+        reset_time = response.headers.get('X-RateLimit-Reset')
+        try:
+            if remaining is not None:
+                self._rate_limit_remaining = int(remaining)
+            if reset_time is not None:
+                self._rate_limit_reset = datetime.fromtimestamp(int(reset_time), tz=timezone.utc)
+        except (ValueError, TypeError):
+            pass
 
     def _handle_rate_limit(self) -> None:
         """Check and handle GitHub API rate limits.
@@ -172,6 +192,10 @@ class GitHubClient:
             RateLimitExceededError: If rate limit is exhausted and cannot wait.
             NetworkError: If unable to check rate limit status.
         """
+        if self._rate_limit_remaining is not None and self._rate_limit_remaining > RATE_LIMIT_BUFFER:
+            time.sleep(REQUEST_DELAY)
+            return
+
         now_epoch = time.time()
         if (now_epoch - self._last_rate_check) < RATE_CHECK_INTERVAL:
             time.sleep(REQUEST_DELAY)
@@ -365,7 +389,7 @@ class GitHubClient:
     def _fetch_issue_timeline_once(self, issue_number: int) -> List[Dict[str, Any]]:
         """Single API call for issue timeline endpoint."""
         self._handle_rate_limit()
-        url = f"{self.base_url}/repos/{TARGET_REPO}/issues/{issue_number}/timeline"
+        url = f"{self.base_url}/repos/{self._repo}/issues/{issue_number}/timeline"
         headers = {
             **self.headers,
             "Accept": "application/vnd.github+json",
@@ -384,6 +408,7 @@ class GitHubClient:
         if response.status_code >= 400:
             self._handle_response_error(response, f"Fetching timeline for issue {issue_number}")
 
+        self._update_rate_limit_from_headers(response)
         timeline = response.json()
         if isinstance(timeline, list):
             return timeline
