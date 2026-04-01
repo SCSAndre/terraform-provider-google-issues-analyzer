@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import logging
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, TextIO
@@ -16,8 +15,9 @@ from .report_logic import (
 )
 from .types_definitions import IssueData
 from .utils import format_age
+from .logging_config import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 

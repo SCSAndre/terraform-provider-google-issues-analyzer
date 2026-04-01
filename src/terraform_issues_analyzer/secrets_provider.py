@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
-import logging
 import os
 from functools import lru_cache
 from typing import Optional
 
-logger = logging.getLogger(__name__)
+from .logging_config import get_logger
+
+logger = get_logger(__name__)
 
 
 class EnvSecretsProvider:

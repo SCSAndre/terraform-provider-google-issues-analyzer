@@ -15,9 +15,10 @@ Example:
     >>> from terraform_issues_analyzer.github_client import GitHubClient
     >>> from terraform_issues_analyzer.issue_classifier import IssueClassifier
     >>>
+    >>> from terraform_issues_analyzer.cli import fetch_all_issues
     >>> client = GitHubClient()
     >>> classifier = IssueClassifier()
-    >>> issues = client.fetch_all_issues()
+    >>> issues = fetch_all_issues(client)
     >>> for issue in issues:
     ...     is_relevant, category, confidence, confidence_band = classifier.classify_issue(issue)
     ...     if is_relevant:

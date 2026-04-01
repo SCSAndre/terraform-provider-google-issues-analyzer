@@ -1,10 +1,11 @@
 """Input validation utilities for GitHub issue data."""
 import re
-import logging
 from typing import Dict, List, Optional, Any
 from html import escape
 
-logger = logging.getLogger(__name__)
+from .logging_config import get_logger
+
+logger = get_logger(__name__)
 
 
 def sanitize_for_markdown(text: str) -> str:

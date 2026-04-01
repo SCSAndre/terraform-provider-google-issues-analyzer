@@ -6,7 +6,7 @@ defaults for optional settings.
 
 Environment Variables:
     GITHUB_TOKEN: GitHub personal access token for API authentication
-    MIN_CONFIDENCE_THRESHOLD: Minimum confidence score (default: 30)
+    MIN_CONFIDENCE_THRESHOLD: Minimum confidence score (default: 75)
     SMTP_SERVER: SMTP server hostname (default: smtp.gmail.com)
     SMTP_PORT: SMTP server port (default: 587)
     SMTP_USERNAME: Email username for sending reports
@@ -131,7 +131,7 @@ def ensure_output_dir() -> None:
 # =============================================================================
 
 #: SMTP server hostname
-SMTP_SERVER: str = get_secret('SMTP_SERVER', 'smtp.gmail.com')
+SMTP_SERVER: str = os.getenv('SMTP_SERVER', 'smtp.gmail.com')
 
 #: SMTP server port (587 for TLS, 465 for SSL)
 SMTP_PORT: int = int(os.getenv('SMTP_PORT') or '587')
