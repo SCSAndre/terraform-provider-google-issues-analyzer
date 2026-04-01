@@ -59,7 +59,7 @@ if [ $? -eq 0 ]; then
     # Send email to team if configured
     if [ -n "$SMTP_USERNAME" ] && [ -n "$SMTP_PASSWORD" ]; then
         log "Sending email to team..."
-        python3 "$SCRIPT_DIR/send_team_email.py" >> "$LOG_FILE" 2>&1
+        python3 -m terraform_issues_analyzer.send_team_email >> "$LOG_FILE" 2>&1
         if [ $? -eq 0 ]; then
             log "✓ Email sent successfully!"
         else

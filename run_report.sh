@@ -35,4 +35,3 @@ python3 -m terraform_issues_analyzer.cli
 
 echo ""
 echo "Analysis complete! Check the analysis_results directory for the report."
-
