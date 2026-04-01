@@ -5,8 +5,7 @@ to eliminate duplication and ensure consistent behavior.
 """
 
 from typing import Any, Dict, List
-
-
+from .utils import extract_label_names_lower
 def is_entry_point(issue: Dict[str, Any]) -> bool:
     """Return True if this issue qualifies as a contributor entry point.
 
@@ -21,7 +20,7 @@ def is_entry_point(issue: Dict[str, Any]) -> bool:
         return False
     if issue.get("is_blocked", False):
         return False
-    labels = [label.lower() for label in issue.get("labels", [])]
+    labels = extract_label_names_lower(issue.get("labels", []))
     if "breaking-change" in labels:
         return False
     lt = issue.get("label_types", {})
@@ -39,7 +38,7 @@ def is_entry_point(issue: Dict[str, Any]) -> bool:
 
 def get_entry_point_reason(issue: Dict[str, Any]) -> str:
     """Return short qualifier text for contributor entry points."""
-    labels = [label.lower() for label in issue.get("labels", [])]
+    labels = extract_label_names_lower(issue.get("labels", []))
     lt = issue.get("label_types", {})
     if lt.get("has_pr", False):
         return "Finish existing PR"

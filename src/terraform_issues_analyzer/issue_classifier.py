@@ -1,5 +1,5 @@
 """Issue classification using TF-IDF and regex matching."""
-import logging
+from .logging_config import get_logger
 import re
 from typing import Dict, Tuple, Optional, List, Any
 
@@ -15,8 +15,9 @@ from .config import (
     ConfidenceLevel,
 )
 from .service_definitions import get_service_terms, get_critical_keywords
+from .utils import extract_label_names, extract_label_names_lower
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 def get_blocking_label_info(labels: List[str]) -> Dict[str, bool]:
@@ -31,7 +32,7 @@ def get_blocking_label_info(labels: List[str]) -> Dict[str, bool]:
             'is_upstream' — True if upstream is present
             'is_blocked'  — True if either is present
     """
-    lower = [label.lower() for label in labels]
+    lower = extract_label_names_lower(labels)
     is_exempt = "forward/exempt" in lower
     is_upstream = "upstream" in lower
     return {
@@ -50,7 +51,7 @@ def classify_labels(labels: List[str]) -> Dict[str, bool]:
     Returns:
         Dictionary with label type flags.
     """
-    labels_lower = [label.lower() for label in labels]
+    labels_lower = extract_label_names_lower(labels)
 
     return {
         "bug": any("bug" in label for label in labels_lower),
@@ -89,7 +90,6 @@ class IssueClassifier:
         # Experimental shadow vectorizer (tri-grams). Logging-only usage.
         self._shadow_vectorizer: Optional[TfidfVectorizer] = None
         self._shadow_category_vectors = None
-        self._initialize_shadow_tfidf()
 
     def _initialize_tfidf(self) -> None:
         """Pre-fits TF-IDF vectorizer with service category documents."""
@@ -113,7 +113,7 @@ class IssueClassifier:
             logger.debug("TF-IDF vectorizer initialized with %d features", 
                         len(self._vectorizer.get_feature_names_out()))
         except Exception as e:
-            logger.error(f"Error initializing TF-IDF vectorizer: {e}")
+            logger.error("Error initializing TF-IDF vectorizer: %s", e)
             self._vectorizer = None
             self._category_vectors = None
 
@@ -140,6 +140,11 @@ class IssueClassifier:
             logger.warning("Error initializing shadow TF-IDF vectorizer: %s", e)
             self._shadow_vectorizer = None
             self._shadow_category_vectors = None
+
+    def _ensure_shadow_initialized(self) -> None:
+        """Lazy-init the shadow vectorizer on first use."""
+        if self._shadow_vectorizer is None and self._shadow_category_vectors is None:
+            self._initialize_shadow_tfidf()
 
     def classify_issue(self, issue: Dict) -> Tuple[bool, Optional[str], float, str]:
         """
@@ -241,7 +246,7 @@ class IssueClassifier:
         """Fast pre-filtering using critical keywords."""
         title = (issue.get("title") or "").lower()
         body = (issue.get("body") or "").lower()
-        labels = [label["name"].lower() for label in issue.get("labels", [])]
+        labels = extract_label_names_lower(issue.get("labels", []))
         label_text = " ".join(labels)
 
         for category, keywords in self.critical_keywords.items():
@@ -270,7 +275,7 @@ class IssueClassifier:
         """Combines issue fields into analyzable text."""
         title = issue.get("title") or ""
         body = issue.get("body") or ""
-        labels = [label["name"] for label in issue.get("labels", [])]
+        labels = extract_label_names(issue.get("labels", []))
         return f"{title}\n{' '.join(labels)}\n{body}"
 
     def _classify_with_tfidf(self, issue_text: str) -> Dict[str, float]:
@@ -298,7 +303,7 @@ class IssueClassifier:
             
             return similarities
         except Exception as e:
-            logger.error(f"Error in optimized TF-IDF classification: {e}")
+            logger.error("Error in optimized TF-IDF classification: %s", e)
             return self._classify_with_tfidf_fallback(issue_text)
 
     def _classify_with_tfidf_fallback(self, issue_text: str) -> Dict[str, float]:
@@ -324,11 +329,12 @@ class IssueClassifier:
 
             return similarities
         except Exception as e:
-            logger.error(f"Error in TF-IDF fallback classification: {e}")
+            logger.error("Error in TF-IDF fallback classification: %s", e)
             return {}
 
     def _classify_with_tfidf_trigram_shadow(self, issue_text: str) -> Dict[str, float]:
         """Experimental tri-gram TF-IDF scoring used only for shadow comparisons."""
+        self._ensure_shadow_initialized()
         if self._shadow_vectorizer is None or self._shadow_category_vectors is None:
             return {}
 
@@ -348,7 +354,7 @@ class IssueClassifier:
         """Calculates regex-based matching scores."""
         title = (issue.get("title") or "").lower()
         body = (issue.get("body") or "").lower()
-        labels = [label["name"].lower() for label in issue.get("labels", [])]
+        labels = extract_label_names_lower(issue.get("labels", []))
 
         regex_scores = {}
         for category, terms in self.service_terms.items():
@@ -477,6 +483,7 @@ class IssueClassifier:
 
     def get_shadow_score_comparison(self, issue: Dict[str, Any]) -> Dict[str, Any]:
         """Return baseline vs experimental scoring details without changing decisions."""
+        self._ensure_shadow_initialized()
         issue_text = self._build_issue_text(issue)
         regex_scores = self._calculate_regex_scores(issue)
 
