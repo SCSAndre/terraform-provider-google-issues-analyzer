@@ -801,5 +801,68 @@ class TestHtmlRecentlyReactivated(unittest.TestCase):
         assert "No recently reactivated issues" in html
 
 
+
+class TestHtmlXssEscaping(unittest.TestCase):
+    """Verify that user-controlled GitHub data is HTML-escaped."""
+
+    def _make_xss_issue(self, title: str, category: str = "Cloud Armor") -> dict:
+        return {
+            'number': 9999,
+            'title': title,
+            'url': 'https://github.com/test/9999',
+            'category': category,
+            'confidence': 90.0,
+            'confidence_band': 'HIGH',
+            'label_types': {'bug': True},
+            'is_assigned': False,
+            'age_days': 100,
+            'days_since_update': 10,
+            'comments': 1,
+            'priority_score': 70.0,
+            'labels': ['bug'],
+            'created_at': '2025-01-01T00:00:00Z',
+            'updated_at': '2025-10-01T00:00:00Z',
+            'assignees': [],
+            'related_categories': [],
+            'is_exempt': False,
+            'is_upstream': False,
+            'is_blocked': False,
+            'is_crash': False,
+            'is_breaking_change': False,
+            'is_new_resource': False,
+            'is_internally_tracked': False,
+            'reactivation_bonus': 0,
+        }
+
+    def test_html_escapes_issue_title(self):
+        """XSS payload in title must be neutralised in all rendered sections."""
+        issue = self._make_xss_issue(title="<script>alert('xss')</script>")
+        html = generate_html_report([issue], output_dir=None)
+        # The literal script tag from issue data must never appear unescaped.
+        # Note: the page does contain <script> tags for Chart.js — we must
+        # ensure the *payload* specifically is escaped, not just tag presence.
+        self.assertIn('&lt;script&gt;', html)
+        # The title text after escaping should not open a new script context.
+        self.assertNotIn('<script>alert', html)
+
+    def test_html_escapes_issue_category(self):
+        """XSS payload in category must be neutralised."""
+        issue = self._make_xss_issue(title="Normal title", category="<img src=x onerror=alert(1)>")
+        html = generate_html_report([issue], output_dir=None)
+        self.assertNotIn('<img src=x', html)
+        self.assertIn('&lt;img', html)
+
+    def test_html_escapes_issue_url(self):
+        """Double-quote in URL must be HTML-escaped to prevent attribute injection."""
+        issue = self._make_xss_issue(title="Normal")
+        # Inject a double-quote to try to break out of the href attribute.
+        issue['url'] = 'https://github.com/test/1" onmouseover="alert(1)'
+        html = generate_html_report([issue], output_dir=None)
+        # escape() converts " -> &quot; so the injected attribute is never parsed.
+        self.assertIn('&quot;', html)
+        # The raw unescaped injection sequence must not appear.
+        self.assertNotIn('href="https://github.com/test/1" onmouseover', html)
+
+
 if __name__ == '__main__':
     unittest.main()

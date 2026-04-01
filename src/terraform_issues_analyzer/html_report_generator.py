@@ -893,7 +893,7 @@ def generate_charts_html(stats: Dict[str, Any]) -> str:
 
     for category, values in stats.get("categories", {}).items():
         category_rows += (
-            f"<tr><td>{category}</td><td>{values.get('bugs', 0)}</td>"
+            f"<tr><td>{escape(category)}</td><td>{values.get('bugs', 0)}</td>"
             f"<td>{values.get('enhancements', 0)}</td></tr>"
         )
 
@@ -965,9 +965,9 @@ def generate_quick_wins_html(issues: List[Dict[str, Any]]) -> str:
         
         rows += f'''
             <tr data-band="{confidence_band}">
-                <td><a href="{issue['url']}" target="_blank">#{issue['number']}</a></td>
+                <td><a href="{escape(issue['url'])}" target="_blank">#{issue['number']}</a></td>
                 <td>{title}{subcategory_badge}</td>
-                <td><span class="category-badge">{issue['category']}</span></td>
+                <td><span class="category-badge">{escape(issue['category'])}</span></td>
                 <td>{get_confidence_badge(issue.get('confidence', 0))}</td>
                 <td>{reason_str}</td>
                 <td>{format_age(issue.get('age_days', 0))}</td>
@@ -1029,7 +1029,7 @@ def generate_contributor_entry_points_html(issues: List[Dict[str, Any]]) -> str:
 
         rows += f'''
             <tr data-band="{confidence_band}">
-                <td><a href="{issue['url']}" target="_blank">#{issue['number']}</a></td>
+                <td><a href="{escape(issue['url'])}" target="_blank">#{issue['number']}</a></td>
                 <td>{title}{subcategory_badge}</td>
                 <td>{why}</td>
                 <td>{get_confidence_badge(issue.get('confidence', 0))}</td>
@@ -1080,9 +1080,9 @@ def generate_attention_needed_html(issues: List[Dict[str, Any]]) -> str:
         
         rows += f'''
             <tr data-band="{confidence_band}">
-                <td><a href="{issue['url']}" target="_blank">#{issue['number']}</a></td>
+                <td><a href="{escape(issue['url'])}" target="_blank">#{issue['number']}</a></td>
                 <td>{title}{subcategory_badge}</td>
-                <td><span class="category-badge">{issue['category']}</span></td>
+                <td><span class="category-badge">{escape(issue['category'])}</span></td>
                 <td>{get_confidence_badge(issue.get('confidence', 0))}</td>
                 <td>{issue.get('comments', 0)}</td>
                 <td>{format_age(issue.get('days_since_update', 0))} ago</td>
@@ -1139,9 +1139,9 @@ def generate_top_issues_html(issues: List[Dict[str, Any]]) -> str:
         rows += f'''
             <tr data-band="{confidence_band}">
                 <td>{i}</td>
-                <td><a href="{issue['url']}" target="_blank">#{issue['number']}</a></td>
+                <td><a href="{escape(issue['url'])}" target="_blank">#{issue['number']}</a></td>
                 <td>{title}{subcategory_badge}</td>
-                <td><span class="category-badge">{issue['category']}</span></td>
+                <td><span class="category-badge">{escape(issue['category'])}</span></td>
                 <td>{get_confidence_badge(issue.get('confidence', 0))}</td>
                 <td>
                     <span class="priority-bar"><span class="priority-fill" style="width: {priority}%"></span></span>
@@ -1191,9 +1191,9 @@ def generate_recently_reactivated_html(issues: List[Dict[str, Any]]) -> str:
 
         rows += f'''
             <tr data-band="{confidence_band}">
-                <td><a href="{issue['url']}" target="_blank">#{issue['number']}</a> 🔄</td>
+                <td><a href="{escape(issue['url'])}" target="_blank">#{issue['number']}</a> 🔄</td>
                 <td>{title}</td>
-                <td><span class="category-badge">{issue['category']}</span></td>
+                <td><span class="category-badge">{escape(issue['category'])}</span></td>
                 <td>{get_confidence_badge(issue.get('confidence', 0))}</td>
                 <td>{format_age(issue.get('age_days', 0))}</td>
                 <td>{format_age(issue.get('days_since_update', 0))} ago</td>
@@ -1250,7 +1250,8 @@ def generate_category_sections_html(by_category: Dict[str, List[Dict[str, Any]]]
         
         rows = ''
         for issue in sorted_issues:
-            title = escape(issue.get('title', ''))[:50] + '...' if len(issue['title']) > 50 else issue['title']
+            raw_t = issue.get('title', '')
+            title = escape(raw_t[:50] + '...' if len(raw_t) > 50 else raw_t)
             priority = issue.get('priority_score', 0)
             confidence_band = get_issue_confidence_band(issue)
             subcategory_badge = '<span class="subcategory-badge recaptcha-badge">🔑 reCAPTCHA</span>' if _is_recaptcha_issue(issue) else ''
@@ -1277,7 +1278,7 @@ def generate_category_sections_html(by_category: Dict[str, List[Dict[str, Any]]]
             
             rows += f'''
                 <tr data-band="{confidence_band}">
-                    <td><a href="{issue['url']}" target="_blank">#{issue['number']}</a></td>
+                    <td><a href="{escape(issue['url'])}" target="_blank">#{issue['number']}</a></td>
                     <td>{title}{subcategory_badge}</td>
                     <td>
                         <span class="priority-bar"><span class="priority-fill" style="width: {priority}%"></span></span>
@@ -1291,7 +1292,7 @@ def generate_category_sections_html(by_category: Dict[str, List[Dict[str, Any]]]
         
         sections += f'''
         <details>
-            <summary>📁 {category} (<span class="section-issue-count">{len(issues)} issues</span>)</summary>
+            <summary>📁 {escape(category)} (<span class="section-issue-count">{len(issues)} issues</span>)</summary>
             <div class="content">
                 {subcategory_note}
                 <table>
@@ -1331,6 +1332,9 @@ def get_chart_scripts(stats: Dict[str, Any]) -> str:
     cat_labels = list(stats['categories'].keys())
     cat_bugs = [stats['categories'][c]['bugs'] for c in cat_labels]
     cat_enhancements = [stats['categories'][c]['enhancements'] for c in cat_labels]
+    cat_labels_json = json.dumps([escape(c) for c in cat_labels])
+    cat_bugs_json = json.dumps(cat_bugs)
+    cat_enhancements_json = json.dumps(cat_enhancements)
     history = stats.get('history', [])
     trend_data = json.dumps(history)
     
@@ -1453,17 +1457,17 @@ def get_chart_scripts(stats: Dict[str, Any]) -> str:
         new Chart(catCtx, {{
             type: 'bar',
             data: {{
-                labels: {cat_labels},
+                labels: {cat_labels_json},
                 datasets: [
                     {{
                         label: 'Bugs',
-                        data: {cat_bugs},
+                        data: {cat_bugs_json},
                         backgroundColor: '#ef4444',
                         borderRadius: 6
                     }},
                     {{
                         label: 'Enhancements',
-                        data: {cat_enhancements},
+                        data: {cat_enhancements_json},
                         backgroundColor: '#10b981',
                         borderRadius: 6
                     }}
