@@ -514,6 +514,115 @@ class TestIssueClassifierNegativeGate(unittest.TestCase):
         assert result is not None
 
 
+class TestClassifierContracts(unittest.TestCase):
+    """Contract tests - validate behavior through public API only.
+
+    These tests should NOT break if internal implementation changes
+    (e.g., renaming private methods, changing TF-IDF parameters).
+    """
+
+    def setUp(self):
+        self.classifier = IssueClassifier()
+
+    # --- Cloud Armor issues MUST be classified as relevant ---
+
+    def test_security_policy_resource_is_relevant(self):
+        result = self.classifier.classify_issue({
+            "title": "google_compute_security_policy drift on apply",
+            "body": "", "labels": [],
+        })
+        self.assertTrue(result[0])
+        self.assertEqual(result[1], "Cloud Armor")
+
+    def test_cloud_armor_keyword_in_body_is_relevant(self):
+        result = self.classifier.classify_issue({
+            "title": "Policy not applying correctly",
+            "body": "The Cloud Armor adaptive protection rule is ignored",
+            "labels": [],
+        })
+        self.assertTrue(result[0])
+
+    def test_waf_keyword_in_title_is_relevant(self):
+        result = self.classifier.classify_issue({
+            "title": "Preconfigured WAF rule sensitivity level ignored",
+            "body": "", "labels": [],
+        })
+        self.assertTrue(result[0])
+
+    def test_cloud_armor_label_is_relevant(self):
+        result = self.classifier.classify_issue({
+            "title": "Bug in security configuration",
+            "body": "", "labels": [{"name": "cloud-armor"}],
+        })
+        self.assertTrue(result[0])
+        self.assertGreaterEqual(result[2], 85.0)  # label match = high confidence
+
+    # --- Non-Cloud-Armor issues MUST NOT be classified as relevant ---
+
+    def test_firebase_issue_is_not_relevant(self):
+        result = self.classifier.classify_issue({
+            "title": "google_firebase_app_check_recaptcha config fails",
+            "body": "Firebase App Check with reCAPTCHA Enterprise",
+            "labels": [],
+        })
+        self.assertFalse(result[0])
+
+    def test_dns_issue_is_not_relevant(self):
+        result = self.classifier.classify_issue({
+            "title": "google_dns_managed_zone DNSSEC drift",
+            "body": "dnssec_config changes on every apply",
+            "labels": [],
+        })
+        self.assertFalse(result[0])
+
+    def test_plain_compute_issue_is_not_relevant(self):
+        result = self.classifier.classify_issue({
+            "title": "google_compute_instance boot disk issue",
+            "body": "Instance fails to boot after resize",
+            "labels": [{"name": "service/compute"}],
+        })
+        self.assertFalse(result[0])
+
+    def test_storage_issue_is_not_relevant(self):
+        result = self.classifier.classify_issue({
+            "title": "google_storage_bucket lifecycle rule bug",
+            "body": "Lifecycle policy not deleting old objects",
+            "labels": [],
+        })
+        self.assertFalse(result[0])
+
+    def test_bigquery_issue_is_not_relevant(self):
+        result = self.classifier.classify_issue({
+            "title": "google_bigquery_table schema update fails",
+            "body": "Adding a column causes full table recreation",
+            "labels": [],
+        })
+        self.assertFalse(result[0])
+
+    # --- classify_issue_with_related must return 5-tuple ---
+
+    def test_classify_issue_with_related_returns_5_tuple(self):
+        result = self.classifier.classify_issue_with_related({
+            "title": "Cloud Armor issue", "body": "", "labels": [],
+        })
+        self.assertEqual(len(result), 5)
+        self.assertIsInstance(result[4], list)  # related_categories
+
+    # --- Edge cases ---
+
+    def test_empty_issue_is_not_relevant(self):
+        result = self.classifier.classify_issue({
+            "title": "", "body": "", "labels": [],
+        })
+        self.assertFalse(result[0])
+
+    def test_none_fields_do_not_crash(self):
+        result = self.classifier.classify_issue({
+            "title": None, "body": None, "labels": [],
+        })
+        self.assertIsInstance(result[0], bool)
+
+
 class TestLabelClassification(unittest.TestCase):
     """Tests for classify_labels utility in classifier module."""
 

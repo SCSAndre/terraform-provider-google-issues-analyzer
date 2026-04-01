@@ -789,7 +789,7 @@ class TestPriorityScoring(unittest.TestCase):
         }
 
     def test_high_confidence_gets_bonus(self):
-        from terraform_issues_analyzer.cli import calculate_priority_score
+        from terraform_issues_analyzer.priority_scorer import calculate_priority_score
 
         high_score = calculate_priority_score(
             confidence=90,
@@ -814,7 +814,7 @@ class TestPriorityScoring(unittest.TestCase):
         self.assertGreater(high_score, review_score)
 
     def test_reactions_increase_priority(self):
-        from terraform_issues_analyzer.cli import calculate_priority_score
+        from terraform_issues_analyzer.priority_scorer import calculate_priority_score
 
         no_reactions = calculate_priority_score(
             confidence=80,
@@ -840,7 +840,7 @@ class TestPriorityScoring(unittest.TestCase):
 
     def test_actionable_true_adds_five_points(self):
         """Actionable issues should receive exactly a +5 priority bonus."""
-        from terraform_issues_analyzer.cli import calculate_priority_score
+        from terraform_issues_analyzer.priority_scorer import calculate_priority_score
 
         base_score = calculate_priority_score(
             confidence=70,
@@ -869,7 +869,7 @@ class TestPriorityScoring(unittest.TestCase):
 
     def test_actionable_default_false_adds_zero_points(self):
         """The default actionable value should behave like False and add no bonus."""
-        from terraform_issues_analyzer.cli import calculate_priority_score
+        from terraform_issues_analyzer.priority_scorer import calculate_priority_score
 
         default_score = calculate_priority_score(
             confidence=65,
@@ -897,7 +897,7 @@ class TestPriorityScoring(unittest.TestCase):
 
     def test_bug_true_adds_five_points(self):
         """Bug label bonus should now contribute exactly +5."""
-        from terraform_issues_analyzer.cli import calculate_priority_score
+        from terraform_issues_analyzer.priority_scorer import calculate_priority_score
 
         non_bug_score = calculate_priority_score(
             confidence=75,
@@ -925,7 +925,7 @@ class TestPriorityScoring(unittest.TestCase):
         self.assertAlmostEqual(bug_score - non_bug_score, 5.0, places=7)
 
     def test_crash_label_adds_bonus(self):
-        from terraform_issues_analyzer.cli import calculate_priority_score
+        from terraform_issues_analyzer.priority_scorer import calculate_priority_score
 
         base = self._make_base_issue()
         base["labels"] = [{"name": "crash"}]
@@ -935,7 +935,7 @@ class TestPriorityScoring(unittest.TestCase):
         assert score_with == min(score_without + 15, 95)
 
     def test_non_crash_no_bonus(self):
-        from terraform_issues_analyzer.cli import calculate_priority_score
+        from terraform_issues_analyzer.priority_scorer import calculate_priority_score
 
         base = self._make_base_issue()
         base["labels"] = [{"name": "bug"}]
@@ -946,7 +946,7 @@ class TestPriorityScoring(unittest.TestCase):
         assert score == score_no_labels
 
     def test_breaking_change_reduces_score(self):
-        from terraform_issues_analyzer.cli import calculate_priority_score
+        from terraform_issues_analyzer.priority_scorer import calculate_priority_score
 
         base = self._make_base_issue()
         base["labels"] = []
@@ -956,7 +956,7 @@ class TestPriorityScoring(unittest.TestCase):
         assert score_breaking == max(0, score_normal - 5)
 
     def test_new_resource_reduces_score(self):
-        from terraform_issues_analyzer.cli import calculate_priority_score
+        from terraform_issues_analyzer.priority_scorer import calculate_priority_score
 
         base = self._make_base_issue()
         base["labels"] = []
@@ -967,7 +967,7 @@ class TestPriorityScoring(unittest.TestCase):
 
     def test_size_xs_label_adds_bonus(self):
         """size/xs label adds 12 points to priority score."""
-        from terraform_issues_analyzer.cli import calculate_priority_score
+        from terraform_issues_analyzer.priority_scorer import calculate_priority_score
 
         issue = self._make_base_issue()
         issue["labels"] = [{"name": "size/xs"}]
@@ -977,7 +977,7 @@ class TestPriorityScoring(unittest.TestCase):
 
     def test_size_l_label_no_change(self):
         """size/l label adds 0 points."""
-        from terraform_issues_analyzer.cli import calculate_priority_score
+        from terraform_issues_analyzer.priority_scorer import calculate_priority_score
 
         issue = self._make_base_issue()
         issue["labels"] = [{"name": "size/l"}]
@@ -987,7 +987,7 @@ class TestPriorityScoring(unittest.TestCase):
 
     def test_size_label_handles_string_format(self):
         """Labels as plain strings (not dicts) are handled safely."""
-        from terraform_issues_analyzer.cli import calculate_priority_score
+        from terraform_issues_analyzer.priority_scorer import calculate_priority_score
 
         issue = self._make_base_issue()
         issue["labels"] = ["size/s", "bug"]
@@ -997,7 +997,7 @@ class TestPriorityScoring(unittest.TestCase):
 
     def test_reactions_increase_priority_score(self):
         """An issue with 15 thumbs_up scores higher than the same issue with 0."""
-        from terraform_issues_analyzer.cli import calculate_priority_score
+        from terraform_issues_analyzer.priority_scorer import calculate_priority_score
 
         base = self._make_base_issue()
         base["reactions_plus_one"] = 0
@@ -1008,7 +1008,7 @@ class TestPriorityScoring(unittest.TestCase):
 
     def test_reactions_capped_at_30(self):
         """thumbs_up above 30 gives the same score as exactly 30."""
-        from terraform_issues_analyzer.cli import calculate_priority_score
+        from terraform_issues_analyzer.priority_scorer import calculate_priority_score
 
         base = self._make_base_issue()
         base["reactions_plus_one"] = 30
@@ -1019,7 +1019,7 @@ class TestPriorityScoring(unittest.TestCase):
 
     def test_reactivation_bonus_applied_for_old_recent_issue(self):
         """Issue older than 1 year with activity in last 90 days gets bonus."""
-        from terraform_issues_analyzer.cli import calculate_priority_score
+        from terraform_issues_analyzer.priority_scorer import calculate_priority_score
 
         base = self._make_base_issue()
         base["age_days"] = 730
@@ -1031,7 +1031,7 @@ class TestPriorityScoring(unittest.TestCase):
 
     def test_reactivation_bonus_zero_for_new_issue(self):
         """New issue (< 1 year) gets no reactivation bonus."""
-        from terraform_issues_analyzer.cli import calculate_priority_score
+        from terraform_issues_analyzer.priority_scorer import calculate_priority_score
 
         base = self._make_base_issue()
         base["age_days"] = 180
@@ -1041,7 +1041,7 @@ class TestPriorityScoring(unittest.TestCase):
 
     def test_reactivation_bonus_zero_for_stale_old_issue(self):
         """Old issue with no recent activity gets no reactivation bonus."""
-        from terraform_issues_analyzer.cli import calculate_priority_score
+        from terraform_issues_analyzer.priority_scorer import calculate_priority_score
 
         base = self._make_base_issue()
         base["age_days"] = 730
@@ -1053,7 +1053,7 @@ class TestPriorityScoring(unittest.TestCase):
 
     def test_ultra_age_bonus_for_5_year_issue(self):
         """A 5-year-old issue scores higher than a 2-year-old identical issue."""
-        from terraform_issues_analyzer.cli import calculate_priority_score
+        from terraform_issues_analyzer.priority_scorer import calculate_priority_score
 
         base = self._make_base_issue()
         base["age_days"] = 730  # 2 years
@@ -1064,7 +1064,7 @@ class TestPriorityScoring(unittest.TestCase):
 
     def test_ultra_age_bonus_zero_under_3_years(self):
         """Issues under 3 years get no ultra-age bonus."""
-        from terraform_issues_analyzer.cli import calculate_priority_score
+        from terraform_issues_analyzer.priority_scorer import calculate_priority_score
 
         base = self._make_base_issue()
         base["age_days"] = 1000  # ~2.7 years
@@ -1076,7 +1076,7 @@ class TestPriorityScoring(unittest.TestCase):
 
     def test_ultra_age_bonus_capped_at_8(self):
         """Ultra-age bonus never exceeds 8 points regardless of age."""
-        from terraform_issues_analyzer.cli import calculate_priority_score
+        from terraform_issues_analyzer.priority_scorer import calculate_priority_score
 
         base = self._make_base_issue()
         # Force neglect factor to its cap in both cases to isolate ultra-age behavior.
