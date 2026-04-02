@@ -13,11 +13,12 @@
 ---
 
 ## Table of Contents
-[![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/downloads/)
+
 - [Purpose](#purpose)
 - [Architecture](#architecture)
 - [Project Structure](#project-structure)
 - [Quick Start](#quick-start)
+- [Quick Start: Automated Reports](#quick-start-automated-reports)
 - [Configuration Reference](#configuration-reference)
 - [Reports & Outputs](#reports--outputs)
 - [Testing](#testing)
@@ -29,31 +30,32 @@
 - [Contributing](#contributing)
 - [Security](#security)
 - [License](#license)
+- [Changelog](CHANGELOG.md)
+- [Automation Quickstart](QUICKSTART_AUTOMATION.md)
+- [Scheduling Reference](SCHEDULING.md)
 
 ---
-[![Code style: ruff](https://img.shields.io/badge/code%20style-ruff-000000.svg)](https://docs.astral.sh/ruff/)
-[![Coverage: 83%](https://img.shields.io/badge/coverage-83%25-brightgreen.svg)](pyproject.toml)
 
-> **Cloud Armor issue intelligence for `hashicorp/terraform-provider-google`.**
+## Purpose
 
 - **Track** the Cloud Armor issue backlog across the Terraform Provider Google repository.
 - **Prioritize** issues with ML‑powered confidence scoring (TF-IDF + regex + shadow scoring).
 - **Identify** contributor entry points, quick wins, and attention‑needed items.
 - **Generate** weekly HTML/Markdown reports for engineering teams and client stakeholders.
 - **Automate** report distribution via email (SMTP) and GitHub Pages deployment.
----
+
 ### Current Scope
-## Table of Contents
+
 | Attribute        | Value                                         |
 |------------------|-----------------------------------------------|
 | **Service**      | Cloud Armor                                   |
 | **Target Repo** | `hashicorp/terraform-provider-google`         |
 | **Output**       | `analysis_results/` (Markdown + HTML reports) |
-- [Project Structure](#project-structure)
+
 Service scope is enforced in [`service_definitions.py`](src/terraform_issues_analyzer/service_definitions.py) and is designed to be extensible to additional GCP services via configuration.
-- [Configuration Reference](#configuration-reference)
+
 ---
-- [Testing](#testing)
+
 ## Architecture
 
 ```mermaid
@@ -94,7 +96,7 @@ flowchart TD
 
 ## Project Structure
 
-```
+```text
 terraform-provider-google-issues-analyzer/
 ├── src/
 │   └── terraform_issues_analyzer/      # Main package
@@ -141,10 +143,21 @@ terraform-provider-google-issues-analyzer/
 └── analysis_results/                  # Generated reports (gitignored)
 ```
 
+### The `docs/` Directory
+
+The `docs/` folder contains the governance materials needed to maintain and extend the offline classifier dataset:
+
+| File | Purpose |
+|---|---|
+| [`dataset_governance.txt`](docs/dataset_governance.txt) | Guidelines for labeling issues, managing training/validation/test splits, and preventing dataset drift |
+| [`labeled_issues_template.txt`](docs/labeled_issues_template.txt) | CSV template and field-by-field instructions for creating new labeled examples |
+
+These files are the source of truth for anyone contributing labeled data to the classifier quality pipeline. See [Offline Quality Evaluation](#offline-quality-evaluation) for how they are used.
+
 ---
-- [Observability](#observability)
-- [Contributing](#contributing)
-- [Security](#security)
+
+## Quick Start
+
 ### Prerequisites
 
 - Python 3.11+
@@ -152,28 +165,48 @@ terraform-provider-google-issues-analyzer/
 
 ### Installation
 
-- [License](#license)
+```bash
 # Clone the repository
 git clone https://github.com/SCSAndre/terraform-provider-google-issues-analyzer.git
 cd terraform-provider-google-issues-analyzer
 
 # Create virtual environment
-
+python -m venv venv
 source venv/bin/activate  # Linux/macOS
 # venv\Scripts\activate   # Windows
-- **Generate** weekly HTML/Markdown reports for engineering teams and client stakeholders.
+
 # Install in editable mode with dev dependencies
 pip install -e ".[dev]"
+```
 
-| Attribute        | Value                                         |
 ### Run the Analyzer
 
-```mermaid
-flowchart TD
+```bash
 python -m terraform_issues_analyzer.cli
-    D -->|Yes| E[AvailabilityChecker]
-    D -->|No| F[Discarded]
+```
+
 Reports are generated in `analysis_results/`.
+
+---
+
+## Quick Start: Automated Reports
+
+For a step-by-step guide to setting up **weekly automated reports**, see [`QUICKSTART_AUTOMATION.md`](QUICKSTART_AUTOMATION.md). It covers:
+
+- Configuring GitHub Actions secrets for email dispatch
+- Gmail, Office 365, and SendGrid SMTP setup
+- Local cron job and systemd timer alternatives
+- Dry-run testing before scheduling goes live
+
+For detailed scheduling configuration, DST handling, retry policies, and multi-provider troubleshooting, see [`SCHEDULING.md`](SCHEDULING.md).
+
+### Automation Method Comparison
+
+| Method | Setup Time | Best Use Case |
+|---|---|---|
+| **GitHub Actions** | ~5 min | Zero-infrastructure; CI/CD already in use |
+| **Local Cron** | ~10 min | Self-hosted runners or persistent local machines |
+| **Systemd Timer** | ~15 min | Linux servers needing reliable logging & restart |
 
 ---
 
@@ -295,179 +328,6 @@ Evaluates classifier accuracy against labeled dataset:
 - **Manual**: Supports custom dataset, split, and tolerance parameters
 
 #### Smoke Runs
-    E -->|Claimed/Assigned| F
-    G --> H[ReportGenerator]
-# Trigger workflows manually
-gh workflow run "Terraform Issues Report" -f dry_run=true -f send_email=false
-gh workflow run "CI Pipeline"
-gh workflow run "Offline Shadow Quality" -f enforce_gate=false
-    style A fill:#4285F4,color:#fff
-    style C fill:#34A853,color:#fff
----
-
-## Secret Backends
-    style L fill:#EA4335,color:#fff
-### Environment Variables (Default)
-
-Secrets are read directly from environment variables. Suitable for local development and CI.
-
-### GCP Secret Manager (Optional)
-
-For production deployments:
-
-| Stage | Module | Description |
-|-------|--------|-------------|
-| **Fetch** | `github_client.py` | Paginated GitHub API client with rate limiting, retry logic (tenacity), and request caching |
-| **Classify** | `issue_classifier.py` | TF-IDF vectorizer + regex scoring with negative gating and optional trigram shadow mode |
-export SECRET_FALLBACK_TO_ENV="true"  # Keep during migration
-| **Score** | `cli.py` | Multi‑signal priority scoring: confidence, engagement, age, neglect, reactivation, crash severity |
-| **Report** | `report_generator.py` | Markdown report with executive summary, entry points, quick wins, and category analysis |
-**Expected secret names in GCP Secret Manager:**
----
-
-## Project Structure
-
-```
-terraform-provider-google-issues-analyzer/
-> **Tip:** Keep `SECRET_FALLBACK_TO_ENV=true` during onboarding, then switch to `false` after validation.
-
----
-│       ├── cli.py                      # Entry point & pipeline orchestrator
-## Offline Quality Evaluation
-│       ├── github_client.py            # GitHub API client (rate limiting, retry)
-Compare baseline vs shadow classifier scoring against a labeled dataset.
-│       ├── availability_checker.py     # Issue availability verification
-### Labeled CSV Schema
-
-| Column | Required | Format |
-|--------|----------|--------|
-| `title` | ✅ | Issue title text |
-| `body` | ✅ | Issue body text |
-| `is_relevant` | ✅ | `true`/`false`, `1`/`0`, `yes`/`no` |
-| `labels` | ❌ | Pipe/comma/semicolon-delimited |
-| `category` | ❌ | e.g., `Cloud Armor` |
-| `split` | ❌ | `train`, `validation`, or `test` |
-
-### Run Evaluation
-│       ├── html_report_generator.py    # Interactive HTML report generation
-│       ├── report_logic.py             # Shared report business logic (DRY)
-python -m terraform_issues_analyzer.evaluate_classifier_quality \
-  --input path/to/labeled_issues.csv
-│   ├── test_report_generator.py
-# With quality gate
-python -m terraform_issues_analyzer.evaluate_classifier_quality \
-Reports are generated in `analysis_results/`.
-
----
-
-  --max-f1-drop 0.02
-### Core Settings
-
-See [`docs/dataset_governance.txt`](docs/dataset_governance.txt) and [`docs/labeled_issues_template.txt`](docs/labeled_issues_template.txt) for governance guidance and labeling templates.
-| `TARGET_REPO` | `hashicorp/terraform-provider-google` | Repository to analyze |
----
-| `OUTPUT_DIR` | `analysis_results` | Directory for generated reports |
-## Weekly Automation
-| `LOG_FORMAT` | `console` | Log format: `console` or `json` |
-### GitHub Actions (Recommended)
-### NLP Shadow Mode (Experimental)
-The repository includes `.github/workflows/terraform_report.yml` which runs every Monday at 10:00 AM PT.
-| `SHADOW_SCORE_DELTA_THRESHOLD` | `15.0` | Alert threshold for score delta |
-> **Note:** GitHub Actions cron uses UTC. DST transitions may shift the schedule by ±1 hour.
-
-### Local Cron (Alternative)
-### Email Distribution
-
-crontab -e
-# Add:
-0 10 * * 1 /path/to/scheduled_report.sh
-| `SMTP_SERVER` | `smtp.gmail.com` | SMTP server hostname |
-| `SMTP_PORT` | `587` | SMTP port (587=TLS, 465=SSL) |
----
-| `SECRET_BACKEND` | `env` | Secret backend: `env` or `gcp` |
-## Observability
-See [`.env.example`](.env.example) for a complete template.
-- **Structured logging:** Set `LOG_FORMAT=json` for machine-parseable logs in CI/production.
-- **Debug mode:** Set `LOG_LEVEL=DEBUG` for verbose output during incident analysis.
-- **Correlation IDs:** Every request chain gets a unique correlation ID for tracing.
-- **Startup summary:** Non-sensitive config summary logged at startup (e.g., whether `GCP_PROJECT_ID` is set).
----
----
-### Test Coverage
-
-Coverage target: **80%** (current: **83%**). Enforced in CI via `pytest-cov`.
-
-# Install dev dependencies
-pip install -e ".[dev]"
-
-# Run linter
-ruff check src/ tests/
-
-# Run formatter
-ruff format src/ tests/
-
-# Run type checker
-mypy src/terraform_issues_analyzer/
-
-# Run tests
-python -m pytest -v
-## CI/CD Pipelines
-
-### Workflow
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/my-feature`)
-3. Make changes with tests
-4. Ensure all quality gates pass:
-   - `ruff check` — no lint errors
-   - `ruff format --check` — consistent formatting
-   - `mypy` — no type errors
-   - `pytest` — all tests pass with ≥80% coverage
-5. Open a PR with proposed design and rollout/rollback plan
-
----
-
-## Security
-
-- **Secrets:** Prefer CI secret stores or cloud secret managers over local `.env` files.
-- **Tokens:** Always use a GitHub token to avoid the 60 req/hr unauthenticated limit.
-- **Reports:** Avoid committing generated reports if they contain sensitive operational metadata.
-- **Dependencies:** Scanned via Bandit (SAST) in every CI run.
-
----
-
-## License
-
-This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
-
-Triggered on every push and PR:
-
-| Job | Tool | Purpose |
-|-----|------|---------|
-| **Lint** | Ruff | Code style, import sorting, security rules |
-| **Type Check** | MyPy | Static type analysis |
-| **Test** | Pytest | Unit tests with ≥80% coverage gate |
-| **Security** | Bandit | SAST security scanning |
-| **Build** | Setuptools | Package build + import verification |
-
-### Report Pipeline (`.github/workflows/terraform_report.yml`)
-
-Weekly (Monday 10:00 AM PT) + manual dispatch:
-
-1. Runs the full analysis pipeline
-2. Deploys HTML report to GitHub Pages
-3. Sends email digest to team (optional)
-4. Uploads reports as build artifacts
-
-### Quality Gate (`.github/workflows/offline_shadow_quality.yml`)
-
-Evaluates classifier accuracy against labeled dataset:
-
-- **PR trigger**: Informational run with artifact output
-- **Weekly schedule**: Quality gate with regression thresholds
-- **Manual**: Supports custom dataset, split, and tolerance parameters
-
-#### Smoke Runs
 
 ```bash
 # Trigger workflows manually
@@ -536,7 +396,11 @@ python -m terraform_issues_analyzer.evaluate_classifier_quality \
   --max-f1-drop 0.02
 ```
 
-See [`docs/dataset_governance.txt`](docs/dataset_governance.txt) and [`docs/labeled_issues_template.txt`](docs/labeled_issues_template.txt) for governance guidance and labeling templates.
+> **Labeling guidance:** The `docs/` directory contains everything you need to build and maintain the labeled dataset:
+> - [`docs/dataset_governance.txt`](docs/dataset_governance.txt) — rules for split management, labeling criteria, and preventing drift
+> - [`docs/labeled_issues_template.txt`](docs/labeled_issues_template.txt) — a ready-to-use CSV template with field-by-field instructions
+>
+> See [Project Structure → The `docs/` Directory](#the-docs-directory) for a full overview.
 
 ---
 
@@ -596,7 +460,8 @@ python -m pytest -v
    - `ruff format --check` — consistent formatting
    - `mypy` — no type errors
    - `pytest` — all tests pass with ≥80% coverage
-5. Open a PR with proposed design and rollout/rollback plan
+5. Update [`CHANGELOG.md`](CHANGELOG.md) for any user-facing change (new feature, bug fix, breaking change)
+6. Open a PR with proposed design and rollout/rollback plan
 
 ---
 
